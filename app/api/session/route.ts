@@ -17,7 +17,7 @@ export async function POST(req: Request) {
         }
 
         // Get the exam to find the recruiterId
-        const exam = await Exam.findById(examId).select("recruiterId status").lean();
+        const exam = await Exam.findById(examId).select("recruiterId status questionsCount opensAt closesAt").lean();
         if (!exam) {
             return NextResponse.json({ message: "Exam not found" }, { status: 404 });
         }
@@ -25,6 +25,35 @@ export async function POST(req: Request) {
         if (exam.status === "closed") {
             return NextResponse.json(
                 { message: "This exam has been closed" },
+                { status: 403 }
+            );
+        }
+
+        if (exam.status === "draft") {
+            return NextResponse.json(
+                { message: "This exam is not yet published" },
+                { status: 403 }
+            );
+        }
+
+        if (!exam.questionsCount || exam.questionsCount === 0) {
+            return NextResponse.json(
+                { message: "This exam has no questions yet" },
+                { status: 403 }
+            );
+        }
+
+        const now = new Date();
+        if (exam.opensAt && now < new Date(exam.opensAt)) {
+            return NextResponse.json(
+                { message: "This exam has not opened yet" },
+                { status: 403 }
+            );
+        }
+
+        if (exam.closesAt && now > new Date(exam.closesAt)) {
+            return NextResponse.json(
+                { message: "This exam window has ended" },
                 { status: 403 }
             );
         }
@@ -88,16 +117,15 @@ export async function GET(req: Request) {
             .lean();
 
         // --- Live Calculation for List ---
-        const enhancedSessions = sessions.map((s: unknown) => {
+        const enhancedSessions = sessions.map((s: Record<string, unknown>) => {
             if (s.status === "in_progress" || s.status === "biometric_check") {
-                s.integrityScore = calculateIntegrityScore(s.violationSummary);
+                s.integrityScore = calculateIntegrityScore(s.violationSummary as Parameters<typeof calculateIntegrityScore>[0]);
             }
             return s;
         });
 
         return NextResponse.json({ items: enhancedSessions }, { status: 200 });
-    } catch {
-
+    } catch (error) {
         console.error("Failed to GET sessions", error);
         return NextResponse.json({ message: "Internal Server Error" }, { status: 500 });
     }

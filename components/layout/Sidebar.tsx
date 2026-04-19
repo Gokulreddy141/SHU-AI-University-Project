@@ -30,7 +30,6 @@ export default function Sidebar() {
         { label: "Exams", icon: "assignment", href: "/dashboard/exams" },
         { label: "Reports", icon: "monitoring", href: "/dashboard/reports" },
         { label: "Live Sessions", icon: "videocam", href: "/dashboard/live" },
-        { label: "AI Audit", icon: "science", href: "/dashboard/audit" },
     ];
 
     const candidateLinks = [

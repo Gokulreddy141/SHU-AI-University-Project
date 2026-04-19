@@ -2,6 +2,21 @@
 
 import { useState, useEffect, useCallback } from "react";
 
+function getAuthHeaders(): Record<string, string> {
+    if (typeof window === "undefined") return {};
+    try {
+        const stored = localStorage.getItem("user");
+        if (!stored) return {};
+        const user = JSON.parse(stored);
+        return {
+            "x-user-id": user._id || "",
+            "x-user-role": user.role || "",
+        };
+    } catch {
+        return {};
+    }
+}
+
 export interface Question {
     _id: string;
     type: "MCQ" | "CODING";
@@ -38,13 +53,19 @@ export const useCandidateQuiz = (examId: string, sessionId: string, isExamActive
                 setLoading(true);
                 setError(null);
 
+                const authHeaders = getAuthHeaders();
+
                 // Fetch Questions
-                const qRes = await fetch(`/api/exam/${examId}/questions?sessionId=${sessionId}`);
+                const qRes = await fetch(`/api/exam/${examId}/questions?sessionId=${sessionId}`, {
+                    headers: authHeaders,
+                });
                 if (!qRes.ok) throw new Error("Failed to load questions");
                 const qData = await qRes.json();
 
                 // Fetch existing responses
-                const rRes = await fetch(`/api/session/${sessionId}/responses`);
+                const rRes = await fetch(`/api/session/${sessionId}/responses`, {
+                    headers: authHeaders,
+                });
                 if (!rRes.ok) throw new Error("Failed to load previous answers");
                 const rData = await rRes.json();
 

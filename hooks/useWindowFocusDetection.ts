@@ -6,6 +6,11 @@ interface WindowFocusState {
     blurCount: number;
 }
 
+// Ignore accidental/transient blurs (e.g. dev tools popping open) shorter than this
+const MIN_BLUR_DURATION_MS = 2000;
+// Only report one violation per window per cooldown period
+const VIOLATION_COOLDOWN_MS = 30000;
+
 export function useWindowFocusDetection(
     sessionId: string,
     candidateId: string,
@@ -16,8 +21,13 @@ export function useWindowFocusDetection(
         blurCount: 0,
     });
     const blurStartTime = useRef<number | null>(null);
+    const lastViolationTime = useRef<number>(0);
 
     const logViolation = useCallback(async (duration: number) => {
+        const now = Date.now();
+        if (now - lastViolationTime.current < VIOLATION_COOLDOWN_MS) return;
+        lastViolationTime.current = now;
+
         try {
             await fetch("/api/violation", {
                 method: "POST",
@@ -36,7 +46,7 @@ export function useWindowFocusDetection(
                 blurCount: prev.blurCount + 1,
             }));
         } catch {
-            // Silently fail, would normally use useViolationBuffer 
+            // Silently fail, would normally use useViolationBuffer
         }
     }, [sessionId, candidateId]);
 
@@ -54,8 +64,11 @@ export function useWindowFocusDetection(
             setState((prev) => ({ ...prev, isFocused: true }));
             if (blurStartTime.current) {
                 const durationMs = Date.now() - blurStartTime.current;
-                logViolation(durationMs);
                 blurStartTime.current = null;
+                // Only log if the candidate was actually away for a meaningful duration
+                if (durationMs >= MIN_BLUR_DURATION_MS) {
+                    logViolation(durationMs);
+                }
             }
         };
 

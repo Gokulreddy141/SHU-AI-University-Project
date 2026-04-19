@@ -38,7 +38,7 @@ export function useScreenRecordingDetection(
     const lowFpsCount = useRef<number>(0);
     const rafRef = useRef<number>(0);
     const frameCount = useRef<number>(0);
-    const lastFpsCheck = useRef<number>(performance.now());
+    const lastFpsCheck = useRef<number>(0);
 
     const logViolation = useCallback(
         async (reason: string) => {
@@ -123,7 +123,7 @@ export function useScreenRecordingDetection(
         const interceptedGetDisplayMedia = (
             constraints?: DisplayMediaStreamOptions
         ): Promise<MediaStream> => {
-            // Someone called getDisplayMedia — flag it
+            // Someone called getDisplayMedia — flag it immediately
             setState((prev) => ({
                 ...prev,
                 displayMediaActive: true,
@@ -131,8 +131,24 @@ export function useScreenRecordingDetection(
             }));
             logViolation("DISPLAY_MEDIA_CALL");
 
-            // Still allow the call to proceed so we don't break the page
-            return originalGetDisplayMedia.call(this, constraints);
+            // Use navigator.mediaDevices as `this` — arrow functions don't bind `this`,
+            // so `this` here would be the module scope (undefined in strict mode).
+            const result = originalGetDisplayMedia.call(navigator.mediaDevices, constraints);
+
+            // When the stream ends (user stops sharing), clear the active flag
+            result.then((stream) => {
+                const resetOnEnd = () => {
+                    setState((prev) => ({ ...prev, displayMediaActive: false }));
+                };
+                stream.getTracks().forEach((track) => {
+                    track.addEventListener("ended", resetOnEnd, { once: true });
+                });
+            }).catch(() => {
+                // User denied / cancelled the share — clear the flag
+                setState((prev) => ({ ...prev, displayMediaActive: false }));
+            });
+
+            return result;
         };
 
         navigator.mediaDevices.getDisplayMedia = interceptedGetDisplayMedia;

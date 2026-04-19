@@ -55,13 +55,18 @@ export function useFullScreenEnforcement(
     useEffect(() => {
         if (!enabled) return;
 
+        // Track whether we've ever been in fullscreen this session.
+        // We don't log a violation on the initial load before fullscreen is first entered.
+        let hasBeenFullscreen = false;
+
         const handleFullScreenChange = () => {
             const isFull = !!document.fullscreenElement;
-
             setState((prev) => ({ ...prev, isFullScreen: isFull }));
 
-            if (!isFull) {
-                // Determine if we should record a violation to avoid spam 
+            if (isFull) {
+                hasBeenFullscreen = true;
+            } else if (hasBeenFullscreen) {
+                // Only flag as violation if the candidate actually left fullscreen
                 const now = Date.now();
                 if (now - lastViolationTime.current > FULLSCREEN_COOLDOWN_MS) {
                     logViolation();
@@ -70,8 +75,10 @@ export function useFullScreenEnforcement(
             }
         };
 
-        // Initial check 
-        handleFullScreenChange();
+        // Initial state sync — deferred to avoid synchronous setState in effect body
+        const isFs = !!document.fullscreenElement;
+        if (isFs) hasBeenFullscreen = true;
+        setTimeout(() => setState((prev) => ({ ...prev, isFullScreen: isFs })), 0);
 
         document.addEventListener("fullscreenchange", handleFullScreenChange);
         return () => {

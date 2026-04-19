@@ -25,6 +25,27 @@ export type SessionStatus =
     | "scheduled"
     | "ongoing_call";
 
+export interface IAiReport {
+    summary: string | null;
+    riskLevel: "low" | "moderate" | "high" | "critical" | null;
+    flags: string[];
+    generatedAt: string | null;
+}
+
+export interface IAnswerAnalysis {
+    questionId: string;
+    aiProbability: number;
+    reasoning: string;
+    flagged: boolean;
+}
+
+export interface IAttentionData {
+    questionId: string;
+    attentionScore: number;
+    dominantEmotion: string;
+    timeSpentSeconds: number;
+}
+
 export interface IExamSession {
     _id: string;
     examId: string;
@@ -43,6 +64,9 @@ export interface IExamSession {
     totalViolations: number;
     violationSummary: IViolationSummary;
     createdAt: string;
+    aiReport?: IAiReport;
+    answerAnalysis?: IAnswerAnalysis[];
+    attentionData?: IAttentionData[];
 }
 
 export interface ICandidateSession {

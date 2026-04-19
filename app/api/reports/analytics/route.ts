@@ -102,7 +102,7 @@ export async function GET(req: Request) {
         // --- Violation-based aggregations (use collected session IDs) ---
         const violationMatch = { sessionId: { $in: recruiterSessionIds } };
 
-        const [heatmapRaw, recentViolations, gazeStats] = await Promise.all([
+        const [heatmapRaw, recentViolations, gazeStats, topFlaggedSessions, violationTypeCounts] = await Promise.all([
             // 5. Heatmap: violation type × hour-of-day buckets
             Violation.aggregate([
                 { $match: violationMatch },
@@ -180,7 +180,7 @@ export async function GET(req: Request) {
             Violation.find(violationMatch)
                 .sort({ timestamp: -1 })
                 .limit(10)
-                .select("type confidence timestamp candidateId")
+                .select("type confidence timestamp candidateId sessionId")
                 .populate("candidateId", "name email")
                 .lean(),
             // 7. Average gaze deviation duration
@@ -192,12 +192,21 @@ export async function GET(req: Request) {
                         duration: { $exists: true, $gt: 0 },
                     },
                 },
-                {
-                    $group: {
-                        _id: null,
-                        avgDuration: { $avg: "$duration" },
-                    },
-                },
+                { $group: { _id: null, avgDuration: { $avg: "$duration" } } },
+            ]),
+            // 8. Top 5 flagged sessions by violation count
+            ExamSession.find({ ...sessionMatch, status: { $in: ["flagged", "completed"] } })
+                .select("candidateId examId integrityScore totalViolations status createdAt")
+                .populate("candidateId", "name email")
+                .populate("examId", "title")
+                .sort({ totalViolations: -1 })
+                .limit(5)
+                .lean(),
+            // 9. Violation counts by type (for filter dropdown + breakdown)
+            Violation.aggregate([
+                { $match: violationMatch },
+                { $group: { _id: "$type", count: { $sum: 1 } } },
+                { $sort: { count: -1 } },
             ]),
         ]);
 
@@ -273,6 +282,7 @@ export async function GET(req: Request) {
 
                 return {
                     id: (v._id as string)?.toString() || `v${idx}`,
+                    sessionId: v.sessionId?.toString() || null,
                     candidateName: name,
                     candidateInitials: initials,
                     type: typeLabels[v.type as string] || (v.type as string),
@@ -291,6 +301,37 @@ export async function GET(req: Request) {
             avgGazeSec > 60
                 ? `${Math.round(avgGazeSec / 60)}m`
                 : `${avgGazeSec}s`;
+
+        // --- Top flagged sessions ---
+        const topFlagged = topFlaggedSessions.map((s: Record<string, unknown>) => {
+            const candidate = s.candidateId as { name?: string } | null;
+            const exam = s.examId as { title?: string } | null;
+            return {
+                sessionId: (s._id as mongoose.Types.ObjectId).toString(),
+                candidateName: candidate?.name || "Unknown",
+                examTitle: exam?.title || "Unknown",
+                integrityScore: s.integrityScore as number,
+                totalViolations: s.totalViolations as number,
+                status: s.status as string,
+            };
+        });
+
+        // --- Violation type breakdown ---
+        const violationBreakdown = (violationTypeCounts as { _id: string; count: number }[]).map(v => ({
+            type: v._id,
+            count: v.count,
+        }));
+
+        // --- Extra stats ---
+        const totalSessions = totalSessionCount;
+        const completedSessions = await ExamSession.countDocuments({ ...sessionMatch, status: "completed" });
+        // Pass rate = completed / (completed + flagged) — only finished sessions count
+        // In-progress / pending sessions are excluded as outcome is not yet determined
+        const finishedSessions = completedSessions + totalFlagged;
+        const passRate = finishedSessions > 0 ? Math.round((completedSessions / finishedSessions) * 100) : null;
+        const avgViolationsPerSession = recruiterSessionIds.length > 0
+            ? Math.round((await Violation.countDocuments(violationMatch)) / recruiterSessionIds.length * 10) / 10
+            : 0;
 
         // --- Trend calculations (compare last 30 vs previous 30 days) ---
         const thirtyDaysAgo = new Date(
@@ -319,19 +360,23 @@ export async function GET(req: Request) {
 
         return NextResponse.json({
             globalIntegrity,
-            globalIntegrityTrend: calcTrend(
-                Math.round(globalIntegrity),
-                100
-            ),
+            globalIntegrityTrend: calcTrend(Math.round(globalIntegrity), 100),
             totalFlagged,
             totalFlaggedTrend: calcTrend(currentFlagged, prevFlagged),
             avgGazeDeviation,
-            avgGazeDeviationTrend:
-                avgGazeSec > 0 ? `-${(avgGazeSec * 0.1).toFixed(1)}` : "0",
+            avgGazeDeviationTrend: avgGazeSec > 0 ? `-${(avgGazeSec * 0.1).toFixed(1)}` : "0",
             totalReports: totalSessionCount.toLocaleString(),
+            // Extra stats
+            totalSessions,
+            completedSessions,
+            passRate,
+            avgViolationsPerSession,
+            // Real data
             integrityTrends,
             heatmap,
             recentViolations: mappedViolations,
+            topFlaggedSessions: topFlagged,
+            violationBreakdown,
         });
     } catch (error) {
         console.error("Failed to fetch analytics:", error);

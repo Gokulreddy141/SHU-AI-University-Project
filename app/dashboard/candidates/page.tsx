@@ -5,6 +5,7 @@ import { useCandidates } from "@/hooks/useCandidates";
 import CandidateTable from "@/components/features/CandidateTable";
 import FilterBar from "@/components/features/FilterBar";
 import BulkCandidateModal from "@/components/features/BulkCandidateModal";
+import InviteCandidateModal from "@/components/features/InviteCandidateModal";
 
 interface User {
     _id: string;
@@ -30,6 +31,7 @@ export default function CandidatesPage() {
     } = useCandidates(user?._id);
 
     const [showBulkModal, setShowBulkModal] = useState(false);
+    const [showInviteModal, setShowInviteModal] = useState(false);
 
     // Load user role
     useEffect(() => {
@@ -81,6 +83,7 @@ export default function CandidatesPage() {
                 searchQuery={searchQuery}
                 onSearchChange={setSearchQuery}
                 onExportClick={handleExport}
+                onInviteClick={() => setShowInviteModal(true)}
                 onAddClick={() => setShowBulkModal(true)}
             />
 
@@ -98,9 +101,15 @@ export default function CandidatesPage() {
                 <BulkCandidateModal
                     recruiterId={user._id}
                     onClose={() => setShowBulkModal(false)}
-                    onSuccess={() => {
-                        setPage(1); // Triggers re-fetch
-                    }}
+                    onSuccess={() => setPage(1)}
+                />
+            )}
+
+            {showInviteModal && (
+                <InviteCandidateModal
+                    recruiterId={user._id}
+                    onClose={() => setShowInviteModal(false)}
+                    onSuccess={() => setPage(1)}
                 />
             )}
         </div>

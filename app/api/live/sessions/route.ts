@@ -29,7 +29,7 @@ export async function GET(req: Request) {
         // Fetch all in-progress sessions with populated refs
         const liveSessions = await ExamSession.find(sessionFilter)
             .select(
-                "candidateId examId integrityScore totalViolations status createdAt"
+                "candidateId examId integrityScore totalViolations status createdAt liveSnapshot liveSnapshotAt"
             )
             .populate("candidateId", "name email")
             .populate("examId", "title sessionCode")
@@ -74,6 +74,12 @@ export async function GET(req: Request) {
                         latestViolation &&
                         (latestViolation.confidence as number) > 0.5;
 
+                    // Only include snapshot if it's recent (< 60s old)
+                    const snapshotRaw = session.liveSnapshot as string | undefined;
+                    const snapshotAt = session.liveSnapshotAt as Date | undefined;
+                    const snapshotAge = snapshotAt ? Date.now() - new Date(snapshotAt).getTime() : Infinity;
+                    const snapshot = snapshotRaw && snapshotAge < 60_000 ? snapshotRaw : null;
+
                     return {
                         id: sessionId.toString(),
                         candidateName: name,
@@ -93,6 +99,7 @@ export async function GET(req: Request) {
                                         : "Moderate",
                             }
                             : undefined,
+                        snapshot, // base64 JPEG or null
                     };
                 }
             )

@@ -59,6 +59,10 @@ export function useVoiceActivityDetection(
     const speechTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
     const lastViolationTime = useRef<number>(0);
     const shouldRestart = useRef(true);
+    // Refs mirror state so checkCrossReference can read live values even when
+    // it is captured inside a stale FaceMesh closure (initAiDetection only runs once)
+    const speechDetectedRef = useRef(false);
+    const availableRef = useRef(false);
 
     const logViolation = useCallback(
         async () => {
@@ -97,12 +101,12 @@ export function useVoiceActivityDetection(
             (new () => SpeechRecognitionInstance) | undefined;
 
         if (!SpeechRecognitionClass) {
-            // Use setTimeout to avoid synchronous setState in effect
             setTimeout(() => setState((prev) => ({ ...prev, available: false })), 0);
+            availableRef.current = false;
             return;
         }
 
-        // Use setTimeout to avoid synchronous setState in effect
+        availableRef.current = true;
         setTimeout(() => setState((prev) => ({ ...prev, available: true })), 0);
 
         const recognition = new SpeechRecognitionClass();
@@ -114,10 +118,12 @@ export function useVoiceActivityDetection(
 
         recognition.onresult = () => {
             // Speech detected — set flag for 5 seconds
+            speechDetectedRef.current = true;
             setState((prev) => ({ ...prev, speechDetected: true }));
 
             if (speechTimerRef.current) clearTimeout(speechTimerRef.current);
             speechTimerRef.current = setTimeout(() => {
+                speechDetectedRef.current = false;
                 setState((prev) => ({ ...prev, speechDetected: false }));
             }, SPEECH_WINDOW_MS);
         };
@@ -161,20 +167,30 @@ export function useVoiceActivityDetection(
         };
     }, [enabled]);
 
+    // Track previous isAnomalous in a ref so we only setState when it actually changes
+    const prevIsAnomalousRef = useRef(false);
+
     /**
      * Call from the exam page to cross-reference with lip-sync.
-     * If speech is detected but lips aren't moving = anomaly.
+     * Reads live speechDetected/available from refs — safe to call from
+     * a stale FaceMesh closure that captured this at mount time.
      */
     const checkCrossReference = useCallback(
         (lipsMoving: boolean) => {
-            const isAnomalous = state.speechDetected && !lipsMoving && state.available;
-            setState((prev) => ({ ...prev, isAnomalous }));
+            // Read from refs — always current even in stale closures
+            const isAnomalous = speechDetectedRef.current && !lipsMoving && availableRef.current;
+
+            // Only update state when the value actually changes (avoids 30fps setState spam)
+            if (isAnomalous !== prevIsAnomalousRef.current) {
+                prevIsAnomalousRef.current = isAnomalous;
+                setState((prev) => ({ ...prev, isAnomalous }));
+            }
 
             if (isAnomalous) {
                 logViolation();
             }
         },
-        [state.speechDetected, state.available, logViolation]
+        [logViolation]
     );
 
     return { ...state, checkCrossReference };

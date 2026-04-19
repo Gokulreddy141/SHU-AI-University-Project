@@ -1,0 +1,22 @@
+Type,Text,Points,Options,CorrectIndex,Languages,StarterCode,ExpectedOutput
+MCQ,What does the pandas method df.dropna() do?,2,Drops all rows;Drops rows with any NaN values;Fills NaN with 0;Drops duplicate rows,1,,,
+MCQ,What is a Python list comprehension?,2,A built-in sorting method;A concise way to create lists using an expression and a loop;A method to copy lists;A decorator pattern,1,,,
+MCQ,Which NumPy function creates an array of zeros?,2,np.empty();np.zeros();np.null();np.blank(),1,,,
+MCQ,What does the * operator do when used in a function definition like def f(*args)?  ,2,Multiplies arguments;Unpacks a list into positional args;Collects extra positional arguments into a tuple;Marks arguments as optional,2,,,
+MCQ,In pandas what does df.groupby('col').mean() do?,3,Sorts by col;Groups rows by unique values in col then computes column means per group;Filters rows where col equals mean;Renames col to mean,1,,,
+MCQ,What is the difference between a Python list and a tuple?,3,Lists are immutable tuples are mutable;Tuples are faster for iteration and immutable lists are mutable;They are identical in all ways;Tuples allow duplicates lists do not,1,,,
+MCQ,What does sklearn's train_test_split do?,2,Normalises the dataset;Splits data into training and testing subsets;Trains a model;Removes outliers,1,,,
+MCQ,What is overfitting in machine learning?,3,When a model is too simple;When a model learns training data too well and performs poorly on unseen data;When training takes too long;When a model has too few parameters,1,,,
+MCQ,Which Python keyword is used to define a generator function?,2,return;async;yield;lambda,2,,,
+MCQ,What does the pandas method df.merge() do?,3,Appends rows vertically;Joins two DataFrames on a key column similar to SQL JOIN;Removes duplicate columns;Splits a DataFrame,1,,,
+MCQ,What is the purpose of cross-validation in ML?,3,To increase training speed;To evaluate model performance on multiple data splits reducing variance in the estimate;To augment the dataset;To reduce overfitting directly,1,,,
+MCQ,What does np.argmax(arr) return?,2,The maximum value in arr;The index of the maximum value in arr;A sorted copy of arr;The sum of arr,1,,,
+CODING,Write a Python function called count_words that takes a string and returns a dictionary with each unique word as a key and its count as the value. Case-insensitive.,5,,,python,"def count_words(text):
+    # write your solution here
+    pass","{'hello': 2, 'world': 1}"
+CODING,Write a Python function called moving_average that takes a list of numbers and a window size k and returns a list of moving averages. Each value is the mean of k consecutive elements.,8,,,python,"def moving_average(nums, k):
+    # write your solution here
+    pass","[2.0, 3.0, 4.0]"
+CODING,Write a Python function called flatten_dict that takes a nested dictionary and returns a flat dictionary with dot-notation keys. Example: {'a': {'b': 1}} becomes {'a.b': 1}.,8,,,python,"def flatten_dict(d, parent_key='', sep='.'):
+    # write your solution here
+    pass","{'a.b': 1, 'a.c': 2}"

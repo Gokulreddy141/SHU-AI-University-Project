@@ -1,6 +1,6 @@
+"use client";
 import React from "react";
 import { LiveSessionFeed } from "@/types/reports";
-import Image from "next/image";
 
 interface LiveFeedCardProps {
     session: LiveSessionFeed;
@@ -39,19 +39,25 @@ export default function LiveFeedCard({ session, onIntervene, onJoin }: LiveFeedC
     return (
         <div className={`group relative aspect-video rounded-lg border bg-[#1a1a1a] overflow-hidden transition-all ${borderClass} ${pulseClass}`}>
 
-            {/* Camera Feed Background */}
-            {session.candidateAvatar ? (
-                <Image
-                    alt="Candidate Feed"
+            {/* Camera Feed Background — live snapshot from candidate webcam */}
+            {session.snapshot ? (
+                // eslint-disable-next-line @next/next/no-img-element
+                <img
+                    alt="Candidate Live Feed"
+                    className={`h-full w-full object-cover transition-opacity ${isClean ? 'opacity-70 group-hover:opacity-100' : 'opacity-85'}`}
+                    src={`data:image/jpeg;base64,${session.snapshot}`}
+                />
+            ) : session.candidateAvatar ? (
+                // eslint-disable-next-line @next/next/no-img-element
+                <img
+                    alt="Candidate"
                     className={`h-full w-full object-cover transition-opacity ${isClean ? 'opacity-60 group-hover:opacity-100' : 'opacity-80'}`}
                     src={session.candidateAvatar}
-                    width={320}
-                    height={180}
-                    unoptimized
                 />
             ) : (
-                <div className="w-full h-full bg-[#0f0f0f] flex items-center justify-center font-mono text-[10px] text-slate-500">
-                    {session.examCode}
+                <div className="w-full h-full bg-[#0f0f0f] flex flex-col items-center justify-center gap-2 font-mono text-[10px] text-slate-600">
+                    <span className="material-symbols-outlined text-3xl">videocam_off</span>
+                    <span>No feed yet</span>
                 </div>
             )}
 

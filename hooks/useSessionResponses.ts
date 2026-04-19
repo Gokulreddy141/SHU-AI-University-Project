@@ -12,7 +12,21 @@ export const useSessionResponses = (sessionId: string | null) => {
         try {
             setLoading(true);
             setError(null);
-            const res = await fetch(`/api/session/${sessionId}/responses`);
+
+            // Build auth headers from localStorage (same pattern as useWebRTC)
+            const authHeaders: Record<string, string> = {};
+            try {
+                const stored = localStorage.getItem("user");
+                if (stored) {
+                    const u = JSON.parse(stored);
+                    if (u._id) authHeaders["x-user-id"] = u._id;
+                    if (u.role) authHeaders["x-user-role"] = u.role;
+                }
+            } catch { /* ignore */ }
+
+            const res = await fetch(`/api/session/${sessionId}/responses`, {
+                headers: authHeaders,
+            });
             const data = await res.json();
             if (data.success) {
                 setResponses(data.items || []);

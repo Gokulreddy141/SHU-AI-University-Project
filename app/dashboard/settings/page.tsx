@@ -1,7 +1,6 @@
 "use client";
 import React, { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import DashboardShell from "@/components/layout/DashboardShell";
 import SettingsForm from "@/components/features/SettingsForm";
 
 interface User {
@@ -33,15 +32,13 @@ export default function RecruiterSettingsPage() {
     if (!user) return null;
 
     return (
-        <DashboardShell userName={user.name} userRole={user.role}>
-            <div className="space-y-8">
-                <div>
-                    <h1 className="text-3xl font-bold text-white mb-2">Account Settings</h1>
-                    <p className="text-slate-400">Manage your recruiter profile and department preferences.</p>
-                </div>
-
-                <SettingsForm user={user} />
+        <div className="p-6 md:p-10 space-y-8">
+            <div>
+                <h1 className="text-3xl font-bold text-white mb-2">Account Settings</h1>
+                <p className="text-slate-400">Manage your recruiter profile and department preferences.</p>
             </div>
-        </DashboardShell>
+
+            <SettingsForm user={user} />
+        </div>
     );
 }

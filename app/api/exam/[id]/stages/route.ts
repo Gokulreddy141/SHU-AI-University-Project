@@ -56,10 +56,10 @@ export async function PATCH(
         }
 
         return NextResponse.json({ success: true, exam });
-    } catch (error: unknown) {
+    } catch (error) {
         console.error("Error updating exam stages:", error);
         return NextResponse.json(
-            { success: false, error: error.message || "Internal server error" },
+            { success: false, error: error instanceof Error ? error.message : "Internal server error" },
             { status: 500 }
         );
     }

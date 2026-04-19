@@ -29,7 +29,7 @@ export async function GET(req: Request) {
         }
 
         // 2. Build the query to filter the User collection
-        const userQuery: unknown = {
+        const userQuery: Record<string, unknown> = {
             _id: { $in: distinctCandidateIds },
             role: "candidate",
         };

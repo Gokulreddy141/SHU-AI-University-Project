@@ -54,26 +54,71 @@ export default function LiveViolationFeed({
     }, [fetchNewViolations, refreshInterval]);
 
     const getIcon = (type: string) => {
-        switch (type) {
-            case "LOOKING_AWAY": return "visibility";
-            case "MULTIPLE_FACES": return "group";
-            case "NO_FACE": return "person_off";
-            case "LIP_SYNC_MISMATCH": return "record_voice_over";
-            case "FACE_MISMATCH": return "badge";
-            case "TAB_SWITCH": return "tab";
-            case "COPY_PASTE": return "content_copy";
-            case "VIRTUAL_CAMERA": return "videocam_off";
-            case "DEVTOOLS_ACCESS": return "terminal";
-            case "FULLSCREEN_EXIT": return "fullscreen_exit";
-            case "WINDOW_BLUR": return "blur_on";
-            case "KEYBOARD_SHORTCUT": return "keyboard";
-            case "CLIPBOARD_PASTE": return "content_paste";
-            default: return "warning";
-        }
+        const iconMap: Record<string, string> = {
+            LOOKING_AWAY:               "center_focus_weak",
+            MULTIPLE_FACES:             "group",
+            NO_FACE:                    "person_off",
+            LIP_SYNC_MISMATCH:          "record_voice_over",
+            FACE_MISMATCH:              "badge",
+            TAB_SWITCH:                 "tab",
+            COPY_PASTE:                 "content_copy",
+            VIRTUAL_CAMERA:             "videocam_off",
+            DEVTOOLS_ACCESS:            "terminal",
+            LIVENESS_FAILURE:           "visibility_off",
+            SECONDARY_MONITOR:          "monitor",
+            FULLSCREEN_EXIT:            "fullscreen_exit",
+            WINDOW_BLUR:                "blur_on",
+            KEYBOARD_SHORTCUT:          "screenshot",
+            CLIPBOARD_PASTE:            "content_paste",
+            PHONE_DETECTED:             "phone_android",
+            UNAUTHORIZED_MATERIAL:      "gavel",
+            HEAD_POSE_ANOMALY:          "accessibility_new",
+            AMBIENT_NOISE:              "volume_up",
+            TYPING_ANOMALY:             "keyboard",
+            SCREEN_RECORDING_DETECTED:  "cast",
+            DUPLICATE_TAB:              "layers",
+            FACE_PROXIMITY_ANOMALY:     "face",
+            EXTENSION_DETECTED:         "extension",
+            PUPIL_FOCUS_ANOMALY:        "remove_red_eye",
+            RESPONSE_TIME_ANOMALY:      "timer",
+            MOUSE_INACTIVITY:           "mouse",
+            NETWORK_ANOMALY:            "wifi_off",
+            VOICE_ACTIVITY_ANOMALY:     "mic",
+            HAND_GESTURE_ANOMALY:       "pan_tool",
+            ENVIRONMENT_CHANGE:         "home",
+            BLINK_PATTERN_ANOMALY:      "visibility",
+            VIRTUAL_DEVICE_DETECTED:    "devices_other",
+            SYNTHETIC_AUDIO_DETECTED:   "graphic_eq",
+            MICRO_GAZE_ANOMALY:         "radar",
+            VM_OR_SANDBOX_DETECTED:     "computer",
+            NOTES_DETECTED:             "article",
+            SECOND_PERSON:              "person_add",
+            // New Tier 1-3
+            TYPING_IDENTITY_MISMATCH:   "fingerprint",
+            VOICE_IDENTITY_MISMATCH:    "voicemail",
+            ROOM_ENVIRONMENT_CHANGE:    "roofing",
+            LLM_API_DETECTED:           "block",
+            PHONE_BELOW_MONITOR:        "smartphone",
+            LIVENESS_CHALLENGE_FAILED:  "no_photography",
+            BEHAVIORAL_ANOMALY:         "psychology_alt",
+            SEMANTIC_ANSWER_ANOMALY:    "psychology",
+            BIMODAL_GAZE_DETECTED:      "desktop_windows",
+            // Gemini Advanced
+            EARPIECE_DETECTED:          "hearing",
+            SMART_GLASSES_DETECTED:     "smart_display",
+            SECOND_SCREEN_DETECTED:     "monitor_heart",
+        };
+        return iconMap[type] ?? "warning";
     };
 
     const getSeverity = (type: string) => {
-        const critical = ["FACE_MISMATCH", "VIRTUAL_CAMERA", "MULTIPLE_FACES", "DEVTOOLS_ACCESS", "FULLSCREEN_EXIT"];
+        const critical = [
+            "FACE_MISMATCH", "VIRTUAL_CAMERA", "MULTIPLE_FACES", "DEVTOOLS_ACCESS",
+            "FULLSCREEN_EXIT", "EARPIECE_DETECTED", "SMART_GLASSES_DETECTED",
+            "LLM_API_DETECTED", "SECOND_PERSON", "VOICE_IDENTITY_MISMATCH",
+            "TYPING_IDENTITY_MISMATCH", "SEMANTIC_ANSWER_ANOMALY", "SECOND_SCREEN_DETECTED",
+            "LIVENESS_CHALLENGE_FAILED", "VM_OR_SANDBOX_DETECTED",
+        ];
         if (critical.includes(type)) return "text-red-500 bg-red-500/10 border-red-500/20";
         return "text-amber-500 bg-amber-500/10 border-amber-500/20";
     };
@@ -117,10 +162,13 @@ export default function LiveViolationFeed({
                             </span>
                         </div>
                         <p className="text-xs opacity-90 truncate">
-                            {v.direction ? `Direction: ${v.direction}` : ""}
-                            {v.duration ? `Duration: ${v.duration}s` : ""}
-                            {!v.direction && !v.duration ? "Integrity event logged" : ""}
+                            {v.direction || (v.duration ? `${v.duration}s` : "Integrity event logged")}
                         </p>
+                        {v.confidence != null && (
+                            <p className="text-[9px] opacity-50 font-mono mt-0.5">
+                                confidence: {(v.confidence * 100).toFixed(0)}%
+                            </p>
+                        )}
                     </div>
                 </div>
             ))}

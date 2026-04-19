@@ -86,10 +86,8 @@ export async function GET(req: Request) {
         const totalSessions = recentSessions.length;
 
         recentSessions.forEach((s: unknown) => {
-            let score = s.integrityScore;
-            if (s.status === "in_progress") {
-                score = calculateIntegrityScore(s.violationSummary);
-            }
+            // Always recompute from violationSummary so it matches the violation API formula
+            const score = calculateIntegrityScore(s.violationSummary);
             totalScore += score;
             if (s.status === "flagged") flaggedSessions++;
         });

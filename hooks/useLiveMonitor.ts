@@ -15,7 +15,10 @@ export function useLiveMonitor() {
 
     const fetchFeeds = useCallback(async () => {
         try {
-            const res = await fetch("/api/live/sessions");
+            // Filter by the logged-in recruiter's ID
+            const stored = typeof window !== "undefined" ? localStorage.getItem("user") : null;
+            const recruiterId = stored ? (JSON.parse(stored)._id || "") : "";
+            const res = await fetch(`/api/live/sessions${recruiterId ? `?recruiterId=${recruiterId}` : ""}`);
             if (!res.ok) throw new Error("Failed to fetch live feeds");
             const json = await res.json();
             const feedsData = json.feeds || [];

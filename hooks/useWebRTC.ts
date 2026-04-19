@@ -6,12 +6,30 @@ const ICE_SERVERS = {
     iceServers: [
         { urls: "stun:stun.l.google.com:19302" },
         { urls: "stun:stun1.l.google.com:19302" },
+        // NOTE: Add a TURN server here for production (required behind symmetric NAT / corporate firewalls)
+        // { urls: "turn:your-turn-server.com", username: "...", credential: "..." }
     ],
 };
 
 const POLL_INTERVAL_MS = 2500;
 
 export type CallStatus = "idle" | "calling" | "incoming" | "connected";
+
+/** Read auth credentials from localStorage and return headers for API calls. */
+function getAuthHeaders(): Record<string, string> {
+    if (typeof window === "undefined") return {};
+    try {
+        const stored = localStorage.getItem("user");
+        if (!stored) return {};
+        const u = JSON.parse(stored);
+        return {
+            "x-user-id": u._id || "",
+            "x-user-role": u.role || "",
+        };
+    } catch {
+        return {};
+    }
+}
 
 export function useWebRTC(
     sessionId: string,
@@ -54,7 +72,10 @@ export function useWebRTC(
         try {
             await fetch("/api/webrtc/signal", {
                 method: "POST",
-                headers: { "Content-Type": "application/json" },
+                headers: {
+                    "Content-Type": "application/json",
+                    ...getAuthHeaders(),
+                },
                 body: JSON.stringify({
                     sessionId,
                     receiverId: activeTargetId.current,
@@ -200,17 +221,23 @@ export function useWebRTC(
     }, [localStream, targetUserId, initPeerConnection, sendSignal, cleanupConnection]);
 
     // 2. Candidate: Accept Call
-    const acceptCall = useCallback(async () => {
+    // Pass `stream` when the candidate's camera is obtained at accept-time
+    // (the hook may have been initialized with localStream=null before the call arrived)
+    const acceptCall = useCallback(async (stream?: MediaStream) => {
         setCallStatus("connected");
         const pc = peerConnection.current;
         if (!pc) return;
 
-        // If candidate hasn't added tracks yet (maybe localStream was null at offer receive)
-        if (currentLocalStream.current) {
+        // Use the freshly acquired stream if provided, otherwise fall back to the hook's localStream
+        const streamToAdd = stream || currentLocalStream.current;
+
+        if (streamToAdd) {
+            // Update the ref so future renegotiations have the right stream
+            currentLocalStream.current = streamToAdd;
             const senders = pc.getSenders();
-            currentLocalStream.current.getTracks().forEach((track) => {
+            streamToAdd.getTracks().forEach((track) => {
                 if (!senders.find(s => s.track === track)) {
-                    pc.addTrack(track, currentLocalStream.current!);
+                    pc.addTrack(track, streamToAdd);
                 }
             });
         }
@@ -244,7 +271,9 @@ export function useWebRTC(
         const pollSignals = async () => {
             try {
                 if (!lastPolledAt.current) return; // Skip if not initialized yet
-                const res = await fetch(`/api/webrtc/signal?sessionId=${sessionId}&since=${lastPolledAt.current.toISOString()}`);
+                const res = await fetch(`/api/webrtc/signal?sessionId=${sessionId}&since=${lastPolledAt.current.toISOString()}`, {
+                    headers: getAuthHeaders(),
+                });
                 if (!res.ok) return;
                 const data = await res.json();
                 const signals: WebRTCSignalPayload[] = data.items || [];

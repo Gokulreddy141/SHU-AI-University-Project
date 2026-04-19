@@ -36,11 +36,11 @@ export async function POST(request: Request) {
         });
 
         return NextResponse.json({ success: true, session }, { status: 201 });
-    } catch (error: unknown) {
+    } catch (error) {
         console.error("Error scheduling session:", error);
 
         // Handle duplicate key error manually depending on db state
-        if (error.code === 11000) {
+        if (error instanceof Error && (error as { code?: number }).code === 11000) {
             return NextResponse.json(
                 { success: false, error: "A session already exists for this candidate in this stage." },
                 { status: 409 }
@@ -48,7 +48,7 @@ export async function POST(request: Request) {
         }
 
         return NextResponse.json(
-            { success: false, error: error.message || "Internal server error" },
+            { success: false, error: error instanceof Error ? error.message : "Internal server error" },
             { status: 500 }
         );
     }

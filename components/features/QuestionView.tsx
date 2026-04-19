@@ -45,38 +45,37 @@ export default function QuestionView({
     };
 
     return (
-        <div className="flex flex-col h-full bg-slate-800/50 border border-slate-700 rounded-2xl p-6 overflow-hidden">
+        <div className="flex flex-col h-full bg-[#1a1a1a] border border-[#3b3b3b] rounded-2xl p-6 overflow-hidden">
             {/* Header: Question Type and Points */}
-            <div className="flex items-center justify-between mb-6 pb-4 border-b border-slate-700">
+            <div className="flex items-center justify-between mb-6 pb-4 border-b border-[#2a2a2a]">
                 <div className="flex items-center gap-3">
-                    <span className="px-2.5 py-1 text-xs font-semibold uppercase tracking-wider bg-slate-700 text-slate-300 rounded-lg">
+                    <span className="px-2.5 py-1 text-xs font-semibold uppercase tracking-wider bg-[#262626] text-[#a1a1a1] border border-[#3b3b3b] rounded-lg">
                         {question.type === "MCQ" ? "Multiple Choice" : "Programming"}
                     </span>
-                    <span className="text-sm text-slate-400">
+                    <span className="text-sm text-[#a1a1a1]">
                         {question.points} {question.points === 1 ? "point" : "points"}
                     </span>
                 </div>
-                <div>
-                    <button
-                        onClick={onToggleReview}
-                        className={`flex items-center gap-2 px-3 py-1.5 rounded-lg text-sm font-medium transition-colors ${response?.isMarkedForReview
-                                ? "bg-orange-500/20 text-orange-400 border border-orange-500/50"
-                                : "bg-slate-700/50 text-slate-400 border border-slate-600 hover:text-white"
-                            }`}
-                    >
-                        <span className="w-2 h-2 rounded-full bg-current"></span>
-                        {response?.isMarkedForReview ? "Unmark Review" : "Mark for Review"}
-                    </button>
-                </div>
+                <button
+                    onClick={onToggleReview}
+                    className={`flex items-center gap-2 px-3 py-1.5 rounded-lg text-sm font-medium transition-colors ${
+                        response?.isMarkedForReview
+                            ? "bg-primary/15 text-primary border border-primary/40"
+                            : "bg-[#262626] text-[#a1a1a1] border border-[#3b3b3b] hover:text-white hover:border-[#555]"
+                    }`}
+                >
+                    <span className="w-2 h-2 rounded-full bg-current"></span>
+                    {response?.isMarkedForReview ? "Unmark Review" : "Mark for Review"}
+                </button>
             </div>
 
             {/* Question Text */}
-            <div className="text-lg text-white mb-8 whitespace-pre-wrap">
+            <div className="text-[#e8e8e8] text-lg leading-relaxed mb-8 whitespace-pre-wrap font-medium">
                 {question.text}
             </div>
 
             {/* Answer Area */}
-            <div className="flex-1 overflow-y-auto custom-scrollbar">
+            <div className="flex-1 overflow-y-auto">
 
                 {/* MCQ Options */}
                 {question.type === "MCQ" && question.options && (
@@ -87,17 +86,19 @@ export default function QuestionView({
                                 <button
                                     key={idx}
                                     onClick={() => handleOptionSelect(idx)}
-                                    className={`w-full text-left p-4 rounded-xl border transition-all ${isSelected
-                                            ? "border-primary bg-primary/10 text-white"
-                                            : "border-slate-600 bg-slate-700/30 text-slate-300 hover:bg-slate-700/70 hover:text-white"
-                                        }`}
+                                    className={`w-full text-left p-4 rounded-xl border transition-all ${
+                                        isSelected
+                                            ? "border-primary bg-primary/10 text-white shadow-[0_0_0_1px_rgba(230,126,92,0.3)]"
+                                            : "border-[#3b3b3b] bg-[#262626] text-[#a1a1a1] hover:bg-[#2e2e2e] hover:text-white hover:border-[#555]"
+                                    }`}
                                 >
                                     <div className="flex items-center gap-4">
-                                        <div className={`w-5 h-5 rounded-full border-2 flex items-center justify-center shrink-0 ${isSelected ? "border-primary" : "border-slate-500"
-                                            }`}>
+                                        <div className={`w-5 h-5 rounded-full border-2 flex items-center justify-center shrink-0 transition-colors ${
+                                            isSelected ? "border-primary" : "border-[#555]"
+                                        }`}>
                                             {isSelected && <div className="w-2.5 h-2.5 rounded-full bg-primary"></div>}
                                         </div>
-                                        <span>{opt}</span>
+                                        <span className="text-sm">{opt}</span>
                                     </div>
                                 </button>
                             );
@@ -108,12 +109,11 @@ export default function QuestionView({
                 {/* CODING Editor */}
                 {question.type === "CODING" && (
                     <div className="h-full flex flex-col min-h-[400px]">
-                        <div className="flex justify-between items-center mb-2 px-1">
-                            <label className="text-sm font-semibold text-slate-400">Your Solution</label>
-
+                        <div className="flex justify-between items-center mb-3 px-1">
+                            <label className="text-xs font-semibold text-[#a1a1a1] uppercase tracking-widest">Your Solution</label>
                             {question.allowedLanguages && question.allowedLanguages.length > 0 && (
                                 <select
-                                    className="bg-slate-900 border border-slate-700 rounded-lg text-sm text-white px-3 py-1 outline-none focus:border-primary"
+                                    className="bg-[#0f0f0f] border border-[#3b3b3b] rounded-lg text-sm text-white px-3 py-1.5 outline-none focus:border-primary transition-colors"
                                     value={response?.selectedLanguage || question.allowedLanguages[0]}
                                     onChange={handleLanguageChange}
                                 >
@@ -123,8 +123,7 @@ export default function QuestionView({
                                 </select>
                             )}
                         </div>
-
-                        <div className="flex-1 border border-slate-700 rounded-xl overflow-hidden bg-[#1e1e1e]">
+                        <div className="flex-1 border border-[#3b3b3b] rounded-xl overflow-hidden">
                             <Editor
                                 height="100%"
                                 language={response?.selectedLanguage || question.allowedLanguages?.[0] || "javascript"}

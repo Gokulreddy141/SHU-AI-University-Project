@@ -24,8 +24,13 @@ export function useSessionDetail(sessionId: string | undefined) {
     // We are only "loading" if we have absolutely no data to show yet, AND we are actively fetching
     const loading = !cached && isNetworkFetching;
 
-    const fetchSession = useCallback(async () => {
+    // `force` bypasses the cache tier — used for manual refetches and live polling
+    const fetchSession = useCallback(async (force = false) => {
         if (!sessionId) return;
+
+        // TIER 1: Hot cache — skip unless forced
+        if (!force && cached && isFresh(cacheKey, 30000)) return;
+
         setIsNetworkFetching(true);
         setError(null);
 
@@ -42,25 +47,18 @@ export function useSessionDetail(sessionId: string | undefined) {
         } finally {
             setIsNetworkFetching(false);
         }
-    }, [sessionId, cacheKey]);
+    }, [sessionId, cacheKey, cached]);
 
     useEffect(() => {
         if (!sessionId) return;
-
-        // TIER 1: Hot cache check (30 seconds)
-        if (cached && isFresh(cacheKey, 30000)) {
-            // Already hot, no need to even ping the network
-            return;
-        }
-
-        // TIER 2: Stale hit or Cold start
-        fetchSession();
-    }, [sessionId, fetchSession, cached, cacheKey]);
+        fetchSession(false);
+    }, [sessionId, fetchSession]);
 
     return {
         session: activeSession,
         loading,
         error,
-        refetch: fetchSession
+        // refetch always forces a network request (bypasses cache)
+        refetch: () => fetchSession(true),
     };
 }

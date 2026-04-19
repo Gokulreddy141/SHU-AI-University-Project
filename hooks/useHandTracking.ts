@@ -14,7 +14,8 @@ const COOLDOWN_MS = 30000; // 30 seconds between violations
 export function useHandTracking(
     sessionId: string,
     candidateId: string,
-    videoRef: React.RefObject<HTMLVideoElement | null>
+    videoRef: React.RefObject<HTMLVideoElement | null>,
+    enabled: boolean = true
 ) {
     const [state, setState] = useState<HandTrackingState>({
         isModelLoaded: false,
@@ -135,6 +136,7 @@ export function useHandTracking(
 
     // Load Tasks Vision WASM model
     useEffect(() => {
+        if (!enabled) return;
         let isMounted = true;
 
         const loadModel = async () => {
@@ -160,12 +162,10 @@ export function useHandTracking(
 
                 if (isMounted) {
                     handLandmarkerRef.current = landmarker;
-                    setState((s) => ({ ...s, isModelLoaded: true }));
                     isRunning.current = true;
-                    // Start detection loop if video already exists
-                    if (videoRef.current && videoRef.current.readyState >= 2) {
-                        detectFrame();
-                    }
+                    // Setting isModelLoaded triggers the second useEffect which starts the rAF loop.
+                    // Do NOT call detectFrame() here — that would create a second parallel loop.
+                    setState((s) => ({ ...s, isModelLoaded: true }));
                 }
             } catch (err) {
                 console.warn("HandLandmarker load failed:", err);
@@ -182,15 +182,34 @@ export function useHandTracking(
                 handLandmarkerRef.current.close();
             }
         };
-    }, [detectFrame, videoRef]);
+    }, [detectFrame, videoRef, enabled]);
 
-    // Start detection loop when video unpauses or loads
+    // Start (or restart) the detection loop when the model is loaded or the video becomes ready.
     useEffect(() => {
-        if (state.isModelLoaded && isRunning.current) {
+        if (!state.isModelLoaded || !isRunning.current) return;
+
+        const startLoop = () => {
             if (requestRef.current) cancelAnimationFrame(requestRef.current);
             requestRef.current = requestAnimationFrame(detectFrame);
+        };
+
+        startLoop();
+
+        // Also restart when the video element starts playing (handles the case where
+        // the model finishes loading before the camera stream is ready).
+        const video = videoRef.current;
+        if (video) {
+            video.addEventListener("canplay", startLoop);
+            video.addEventListener("play", startLoop);
         }
-    }, [state.isModelLoaded, detectFrame]);
+
+        return () => {
+            if (video) {
+                video.removeEventListener("canplay", startLoop);
+                video.removeEventListener("play", startLoop);
+            }
+        };
+    }, [state.isModelLoaded, detectFrame, videoRef]);
 
     return state;
 }

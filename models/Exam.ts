@@ -53,6 +53,14 @@ const ExamSchema = new mongoose.Schema(
             type: Number,
             default: 0,
         },
+        opensAt: {
+            type: Date,
+            default: null,
+        },
+        closesAt: {
+            type: Date,
+            default: null,
+        },
         stages: [
             {
                 title: { type: String, required: true },
@@ -69,7 +77,6 @@ const ExamSchema = new mongoose.Schema(
     { timestamps: true }
 );
 
-ExamSchema.index({ sessionCode: 1 });
 ExamSchema.index({ recruiterId: 1, createdAt: -1 });
 
 export default mongoose.models.Exam || mongoose.model("Exam", ExamSchema);

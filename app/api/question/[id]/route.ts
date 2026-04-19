@@ -41,9 +41,13 @@ export async function PATCH(
             );
         }
 
+        // Strip immutable/relational fields before updating
+        // eslint-disable-next-line @typescript-eslint/no-unused-vars
+        const { _id, examId, stageId, ...updateFields } = body;
+
         const updatedQuestion = await Question.findByIdAndUpdate(
             questionId,
-            { $set: body },
+            { $set: updateFields },
             { new: true, runValidators: true }
         ).lean();
 

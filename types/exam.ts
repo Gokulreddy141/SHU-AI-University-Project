@@ -17,6 +17,8 @@ export interface IExam {
     flagThreshold: number;
     proctoringMode: "strict" | "standard" | "light";
     questionsCount: number;
+    opensAt?: string | null;
+    closesAt?: string | null;
     stages?: IExamStage[];
     createdAt: string;
 

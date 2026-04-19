@@ -6,19 +6,37 @@ export interface AnalyticsData {
     avgGazeDeviation: string;
     avgGazeDeviationTrend: string;
     totalReports: string;
+    // Extended real stats
+    totalSessions: number;
+    completedSessions: number;
+    passRate: number | null; // null = no finished sessions yet
+    avgViolationsPerSession: number;
     integrityTrends: { date: string; score: number }[];
     heatmap: {
         category: string;
-        densities: number[]; // 0 to 5 mapped to time blocks
+        densities: number[];
     }[];
     recentViolations: {
         id: string;
+        sessionId?: string | null;
         candidateName: string;
         candidateInitials?: string;
         candidateAvatar?: string;
         type: string;
         severity: "low" | "moderate" | "critical";
         timestamp: string;
+    }[];
+    topFlaggedSessions: {
+        sessionId: string;
+        candidateName: string;
+        examTitle: string;
+        integrityScore: number;
+        totalViolations: number;
+        status: string;
+    }[];
+    violationBreakdown: {
+        type: string;
+        count: number;
     }[];
 }
 
@@ -34,4 +52,5 @@ export interface LiveSessionFeed {
         message: string;
         type: string;
     };
+    snapshot?: string | null; // base64 JPEG from candidate webcam
 }

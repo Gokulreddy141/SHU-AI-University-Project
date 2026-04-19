@@ -16,7 +16,9 @@ export function useAnalytics() {
         if (!silent) setLoading(true);
         setError(null);
         try {
-            const res = await fetch("/api/reports/analytics");
+            const stored = typeof window !== "undefined" ? localStorage.getItem("user") : null;
+            const recruiterId = stored ? (JSON.parse(stored)._id || "") : "";
+            const res = await fetch(`/api/reports/analytics${recruiterId ? `?recruiterId=${recruiterId}` : ""}`);
             if (!res.ok) throw new Error("Failed to fetch analytics");
             const json = await res.json();
             setData(json);

@@ -17,7 +17,7 @@ function generateSessionCode(): string {
 export async function POST(req: Request) {
     try {
         await connectToDatabase();
-        const { recruiterId, title, description, duration } = await req.json();
+        const { recruiterId, title, description, duration, flagThreshold, proctoringMode, opensAt, closesAt } = await req.json();
 
         if (!recruiterId || !title || !duration) {
             return NextResponse.json(
@@ -47,6 +47,19 @@ export async function POST(req: Request) {
             );
         }
 
+        // Validate schedule window
+        const parsedOpensAt = opensAt ? new Date(opensAt) : null;
+        const parsedClosesAt = closesAt ? new Date(closesAt) : null;
+        if (parsedOpensAt && isNaN(parsedOpensAt.getTime())) {
+            return NextResponse.json({ message: "Invalid opensAt date" }, { status: 400 });
+        }
+        if (parsedClosesAt && isNaN(parsedClosesAt.getTime())) {
+            return NextResponse.json({ message: "Invalid closesAt date" }, { status: 400 });
+        }
+        if (parsedOpensAt && parsedClosesAt && parsedClosesAt <= parsedOpensAt) {
+            return NextResponse.json({ message: "closesAt must be after opensAt" }, { status: 400 });
+        }
+
         // Generate unique session code (retry if collision)
         let sessionCode = generateSessionCode();
         let existing = await Exam.findOne({ sessionCode }).lean();
@@ -63,6 +76,10 @@ export async function POST(req: Request) {
             description,
             duration,
             sessionCode,
+            ...(flagThreshold !== undefined && { flagThreshold }),
+            ...(proctoringMode && { proctoringMode }),
+            ...(parsedOpensAt && { opensAt: parsedOpensAt }),
+            ...(parsedClosesAt && { closesAt: parsedClosesAt }),
         });
 
         return NextResponse.json(
@@ -96,7 +113,7 @@ export async function GET(req: Request) {
         const limit = parseInt(searchParams.get("limit") || "20");
 
         const exams = await Exam.find({ recruiterId })
-            .select("title description duration sessionCode status proctoringMode questionsCount createdAt")
+            .select("title description duration sessionCode status proctoringMode questionsCount opensAt closesAt createdAt")
             .sort({ createdAt: -1 })
             .skip((page - 1) * limit)
             .limit(limit)

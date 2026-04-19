@@ -1,5 +1,5 @@
 "use client";
-import React, { useState, useEffect, useRef, useCallback } from "react";
+import { useState, useEffect, useRef, useCallback } from "react";
 import { useParams, useRouter } from "next/navigation";
 import CameraFeed from "@/components/features/CameraFeed";
 import ProgressBar from "@/components/ui/ProgressBar";
@@ -38,6 +38,20 @@ import LiveVideoCall from "@/components/features/LiveVideoCall";
 import { useCandidateQuiz } from "@/hooks/useCandidateQuiz";
 import QuizTracker from "@/components/features/QuizTracker";
 import QuestionView from "@/components/features/QuestionView";
+import { useGeminiLiveMonitoring } from "@/hooks/useGeminiLiveMonitoring";
+import { useGeminiMonitoring } from "@/hooks/useGeminiMonitoring";
+import { useClipboardInterception } from "@/hooks/useClipboardInterception";
+import { usePrintScreenDetection } from "@/hooks/usePrintScreenDetection";
+import { useFaceIdentityVerification } from "@/hooks/useFaceIdentityVerification";
+import { useLLMTrafficDetection } from "@/hooks/useLLMTrafficDetection";
+import { usePhoneBelowMonitorDetection } from "@/hooks/usePhoneBelowMonitorDetection";
+import { useSileroVAD } from "@/hooks/useSileroVAD";
+import { useRoomEnvironmentMonitor } from "@/hooks/useRoomEnvironmentMonitor";
+import { useSpeakerIdentity } from "@/hooks/useSpeakerIdentity";
+import { useLivenessDetection } from "@/hooks/useLivenessDetection";
+import { useBehavioralConsistency } from "@/hooks/useBehavioralConsistency";
+import { useAttentionScore } from "@/hooks/useAttentionScore";
+import { useEmotionDetection } from "@/hooks/useEmotionDetection";
 
 interface FaceMeshLandmark {
     x: number;
@@ -92,7 +106,6 @@ export default function CandidateExamPage() {
     const [examEnded, setExamEnded] = useState(false);
     const [aiEnabled, setAiEnabled] = useState(false);
     const [aiInitFailed, setAiInitFailed] = useState(false);
-    const [violationCount, setViolationCount] = useState(0);
     const [permissionState, setPermissionState] = useState<PermissionState>("checking");
 
     const lookAwayStart = useRef<number | null>(null);
@@ -103,8 +116,17 @@ export default function CandidateExamPage() {
     const aiRunning = useRef<boolean>(false);
     const lookAwayTimer = useRef<ReturnType<typeof setInterval> | null>(null);
     const throttleRef = useRef<Record<string, number>>({});
+    // Live AI state ref — always holds the latest values for snapshot upload (avoids stale closure)
+    const liveAiStateRef = useRef({
+        gazeDirection: "CENTER",
+        faceCount: 1,
+        isSpeaking: false,
+        isLookingAway: false,
+        activeAlerts: [] as string[],
+        integrityScore: 100,
+    });
 
-    const { refetch: refetchViolations } = useViolationLog(sessionId as string);
+    const { violations: dbViolations, refetch: refetchViolations } = useViolationLog(sessionId as string);
     const { logViolation: bufferLogViolation, stopAutoFlush, flush } = useViolationBuffer();
     const { persistedState, saveState } = useCandidatePersistence(sessionId as string);
 
@@ -190,25 +212,24 @@ export default function CandidateExamPage() {
         if (sessionId) fetchSession();
     }, [sessionId, router]);
 
-    // ── Timer countdown ──
+    // ── Timer countdown — runs once when totalDuration is set, stable interval ──
     useEffect(() => {
-        if (timeRemaining <= 0 || examEnded) return;
+        if (!totalDuration || examEnded) return;
 
         const interval = setInterval(() => {
-            setTimeRemaining((prev) => {
-                const next = prev - 1000;
-                if (next <= 0) {
-                    clearInterval(interval);
-                    handleEndExam();
-                    return 0;
-                }
-                return next;
-            });
+            setTimeRemaining((prev) => Math.max(0, prev - 1000));
         }, 1000);
 
         return () => clearInterval(interval);
-        // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [timeRemaining, examEnded]);
+    }, [totalDuration, examEnded]);
+
+    // ── Auto-submit when timer hits zero ──
+    useEffect(() => {
+        if (timeRemaining === 0 && totalDuration > 0 && !examEnded) {
+            handleEndExam();
+        }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [timeRemaining]);
 
     // ── Look-away seconds tracker ──
     useEffect(() => {
@@ -240,7 +261,7 @@ export default function CandidateExamPage() {
             // Throttling for continuous violations
             const now = Date.now();
             const lastLog = throttleRef.current[type] || 0;
-            const throttleMs = type === "MULTIPLE_FACES" ? 10000 : type === "LOOKING_AWAY" ? 5000 : 0;
+            const throttleMs = type === "MULTIPLE_FACES" ? 10000 : type === "LOOKING_AWAY" ? 5000 : type === "NO_FACE" ? 10000 : 0;
 
             if (now - lastLog < throttleMs) return;
             throttleRef.current[type] = now;
@@ -255,7 +276,6 @@ export default function CandidateExamPage() {
                 confidence: confidence || 0.85,
             });
             if (success) {
-                setViolationCount((p) => p + 1);
                 refetchViolations();
             }
         },
@@ -294,11 +314,11 @@ export default function CandidateExamPage() {
     const faceProximity = useFaceProximityDetection(sessionId as string, user?._id || "");
     useExtensionDetection(sessionId as string, user?._id || "", isExamActive);
     const irisFocus = useIrisFocusTracking(sessionId as string, user?._id || "");
-    useResponseTimeProfiling(sessionId as string, user?._id || "");
+    const responseTimeProfiling = useResponseTimeProfiling(sessionId as string, user?._id || "");
     useMouseBehaviorAnalysis(sessionId as string, user?._id || "", isExamActive);
     useNetworkMonitor(sessionId as string, user?._id || "", isExamActive);
     const voiceActivity = useVoiceActivityDetection(sessionId as string, user?._id || "", isExamActive && isMicAvailable);
-    useHandTracking(sessionId as string, user?._id || "", videoRef);
+    useHandTracking(sessionId as string, user?._id || "", videoRef, isExamActive);
     useBrowserFingerprint(sessionId as string, user?._id || "", isExamActive);
     const blinkAnalysis = useBlinkFrequencyAnalysis(sessionId as string, user?._id || "");
     useVirtualDeviceDetection(sessionId as string, user?._id || "", isExamActive);
@@ -306,22 +326,151 @@ export default function CandidateExamPage() {
     const microGaze = useMicroGazeTracker(sessionId as string, user?._id || "");
     useSandboxEnvironmentCheck(sessionId as string, user?._id || "", isExamActive);
 
+    // ── NEW: Tier 1 Features ──
+    // Clipboard interception (smarter than the inline handler — detects large pastes with no prior typing)
+    useClipboardInterception(sessionId as string, user?._id || "", isExamActive);
+    // PrintScreen / screenshot detection
+    usePrintScreenDetection(sessionId as string, user?._id || "", isExamActive);
+    // LLM API traffic blocking via Service Worker
+    useLLMTrafficDetection(sessionId as string, user?._id || "", isExamActive);
+    // Room environment change (pHash background comparison)
+    useRoomEnvironmentMonitor(videoRef, sessionId as string, user?._id || "", isExamActive);
+
+    // ── NEW: Tier 2 Features ──
+    // Advanced VAD (replaces Web Speech API — energy + ZCR + spectral analysis)
+    const sileroVAD = useSileroVAD(sessionId as string, user?._id || "", isExamActive && isMicAvailable);
+    // Speaker voice identity (spectral fingerprint, detects person swap)
+    useSpeakerIdentity(sessionId as string, user?._id || "", isExamActive && isMicAvailable);
+
+    // ── NEW: Tier 3 Features ──
+    // Liveness detection (active blink challenge + passive micro-movement)
+    const liveness = useLivenessDetection(sessionId as string, user?._id || "", isExamActive);
+    // Behavioral consistency scoring (Isolation Forest meta-signal)
+    const behavioralConsistency = useBehavioralConsistency(sessionId as string, user?._id || "", isExamActive);
+
+    // ── NEW: Continuous attention score ──
+    const attention = useAttentionScore();
+    // ── NEW: Emotion / stress detection ──
+    const emotion = useEmotionDetection(sessionId as string, user?._id || "", isExamActive);
+
+    // Face identity verification — processLandmarks called inside FaceMesh callback below
+    const faceIdentity = useFaceIdentityVerification(sessionId as string, user?._id || "", isExamActive);
+    // Phone-below-monitor detection — processLandmarks called inside FaceMesh callback below
+    const phoneBelowMonitor = usePhoneBelowMonitorDetection(sessionId as string, user?._id || "", isExamActive);
+
+    // Feed behavioral consistency with frame-level signals from other detectors
+    useEffect(() => {
+        if (!isExamActive) return;
+        behavioralConsistency.recordFrame(
+            gazeDirection !== "CENTER",
+            faceCount > 0,
+            sileroVAD.isSpeechDetected
+        );
+    }, [gazeDirection, faceCount, sileroVAD.isSpeechDetected, isExamActive, behavioralConsistency]);
+
+    // ── Attention score — update on every gaze/face/blink state change ──
+    useEffect(() => {
+        if (!isExamActive) return;
+        attention.update({
+            gazeOnScreen: gazeDirection === "CENTER",
+            facePresent: faceCount > 0,
+            blinkRateNormal: !blinkAnalysis.isAnomalous,
+            headPoseStable: !headPose.isAnomalous,
+        });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [gazeDirection, faceCount, isExamActive]);
+
+    // Keep liveAiStateRef in sync — used by snapshot upload to piggyback AI state
+    useEffect(() => {
+        const recentAlerts = dbViolations
+            .filter(v => Date.now() - new Date(v.timestamp).getTime() < 30_000)
+            .map(v => v.type)
+            .slice(-5);
+        liveAiStateRef.current = {
+            gazeDirection,
+            faceCount,
+            isSpeaking: sileroVAD.isSpeechDetected,
+            isLookingAway: gazeDirection !== "CENTER",
+            activeAlerts: recentAlerts,
+            integrityScore: session?.integrityScore ?? 100,
+        };
+    }, [gazeDirection, faceCount, sileroVAD.isSpeechDetected, dbViolations, session]);
+
+    // ── Gemini Live AI Monitoring (real-time WebSocket streaming) ──
+    const { status: geminiStatus } = useGeminiLiveMonitoring({
+        sessionId: sessionId as string,
+        candidateId: user?._id || "",
+        videoRef,
+        isActive: isExamActive,
+        frameIntervalMs: 3000,
+        onViolation: (type, description, confidence) => {
+            logViolation(type, description, undefined, confidence);
+        },
+    });
+
+    // ── Gemini REST Fallback (activates when Live WebSocket is not connected) ──
+    // Polls every 30s with exponential back-off. Ensures coverage even when
+    // the Live session fails to connect (API quota, network issues, etc.)
+    useGeminiMonitoring({
+        sessionId: sessionId as string,
+        candidateId: user?._id || "",
+        videoRef,
+        isActive: isExamActive && (geminiStatus === "disconnected" || geminiStatus === "error"),
+        intervalMs: 30_000,
+        onViolation: (type, description, confidence) => {
+            logViolation(type, description, undefined, confidence);
+        },
+    });
+
     // ── WebRTC Live Video Interview (Candidate Side) ──
-    // The candidate receives the call. The target is the recruiter, but we don't know their ID until the offer arrives.
-    // useWebRTC handles extracting the senderId from the incoming offer automatically.
+    // Candidate always starts with null localStream — camera is obtained only when they accept the call.
+    const [candidateCallStream, setCandidateCallStream] = useState<MediaStream | null>(null);
+
     const {
         callStatus,
         remoteStream,
+        acceptCall,
         endCall,
         sendTelemetry
     } = useWebRTC(
         sessionId as string,
         user?._id || "",
-        null, // Target ID is null initially for the receiver
-        videoRef.current?.srcObject as MediaStream || null
+        null, // Target ID is unknown until the offer arrives — hook extracts senderId automatically
+        candidateCallStream
     );
 
-    // AI Telemetry Pipe (Candidate -> Recruiter)
+    // Accept a recruiter's call: acquire camera+mic, then complete the WebRTC handshake
+    const handleAcceptCall = useCallback(async () => {
+        let stream: MediaStream | null = null;
+        try {
+            stream = await navigator.mediaDevices.getUserMedia({
+                video: { width: 640, height: 480, facingMode: "user" },
+                audio: { echoCancellation: true, noiseSuppression: true },
+            });
+        } catch {
+            // Graceful degradation: audio-only if video is denied
+            try {
+                stream = await navigator.mediaDevices.getUserMedia({
+                    audio: { echoCancellation: true, noiseSuppression: true },
+                });
+            } catch {
+                // Cannot get any media — accept anyway (recruiter gets no stream, call still connects)
+            }
+        }
+        if (stream) setCandidateCallStream(stream);
+        await acceptCall(stream ?? undefined);
+    }, [acceptCall]);
+
+    // Clean up candidate stream when call ends
+    const handleEndCallCandidate = useCallback(() => {
+        endCall();
+        if (candidateCallStream) {
+            candidateCallStream.getTracks().forEach(t => t.stop());
+            setCandidateCallStream(null);
+        }
+    }, [endCall, candidateCallStream]);
+
+    // AI Telemetry Pipe (Candidate -> Recruiter): send live gaze/face data over data channel
     useEffect(() => {
         if (callStatus === "connected") {
             sendTelemetry({
@@ -332,8 +481,114 @@ export default function CandidateExamPage() {
         }
     }, [gazeDirection, faceCount, callStatus, sendTelemetry]);
 
+    // Stop candidate stream if exam ends while call is active
+    useEffect(() => {
+        if (examEnded && candidateCallStream) {
+            candidateCallStream.getTracks().forEach(t => t.stop());
+            setCandidateCallStream(null);
+        }
+    }, [examEnded, candidateCallStream]);
 
 
+
+
+    // ── Response time profiling + attention/emotion tracking: per-question ──
+    useEffect(() => {
+        if (!isExamActive || !quiz.currentQuestion?._id) return;
+        responseTimeProfiling.recordQuestionStart(quiz.currentQuestion._id);
+        // End previous question's attention window, then start the new one
+        attention.endQuestion();
+        attention.startQuestion(quiz.currentQuestion._id);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [quiz.currentIndex, isExamActive]);
+
+    // ── Periodic violation refetch (picks up violations logged by hooks) ──
+    useEffect(() => {
+        if (examEnded) return;
+        const interval = setInterval(() => refetchViolations(), 15000);
+        return () => clearInterval(interval);
+    }, [examEnded, refetchViolations]);
+
+    // ── WebSocket video relay publisher (10 fps → recruiter war room) ────────
+    useEffect(() => {
+        if (!isExamActive || !sessionId) return;
+
+        const proto = window.location.protocol === "https:" ? "wss:" : "ws:";
+        const wsUrl = `${proto}//${window.location.host}/ws/video?sessionId=${sessionId}&role=publisher`;
+        let ws: WebSocket | null = null;
+        let frameInterval: ReturnType<typeof setInterval> | null = null;
+        let reconnectTimeout: ReturnType<typeof setTimeout> | null = null;
+        let destroyed = false;
+
+        const captureFrame = () => {
+            const video = videoRef.current;
+            if (!ws || ws.readyState !== WebSocket.OPEN) return;
+            if (!video || video.readyState < 2) return;
+            const canvas = document.createElement("canvas");
+            canvas.width = 320;
+            canvas.height = 240;
+            const ctx = canvas.getContext("2d");
+            if (!ctx) return;
+            ctx.drawImage(video, 0, 0, 320, 240);
+            const dataUrl = canvas.toDataURL("image/jpeg", 0.6);
+            const imageBase64 = dataUrl.split(",")[1];
+            try {
+                ws.send(JSON.stringify({ type: "FRAME", imageBase64, aiState: liveAiStateRef.current }));
+            } catch { /* socket not ready */ }
+        };
+
+        const connect = () => {
+            if (destroyed) return;
+            ws = new WebSocket(wsUrl);
+            ws.onopen = () => {
+                frameInterval = setInterval(captureFrame, 50); // 20 fps
+            };
+            ws.onclose = () => {
+                if (frameInterval) { clearInterval(frameInterval); frameInterval = null; }
+                if (!destroyed) {
+                    reconnectTimeout = setTimeout(connect, 3000);
+                }
+            };
+            ws.onerror = () => ws?.close();
+        };
+
+        connect();
+
+        return () => {
+            destroyed = true;
+            if (frameInterval) clearInterval(frameInterval);
+            if (reconnectTimeout) clearTimeout(reconnectTimeout);
+            ws?.close();
+        };
+    }, [isExamActive, sessionId]);
+
+    // ── HTTP snapshot upload fallback for war room (every 15s) ───────────────
+    useEffect(() => {
+        if (!isExamActive || !sessionId) return;
+
+        const uploadSnapshot = () => {
+            const video = videoRef.current;
+            if (!video || video.readyState < 2) return;
+            const canvas = document.createElement("canvas");
+            canvas.width = 320;
+            canvas.height = 240;
+            const ctx = canvas.getContext("2d");
+            if (!ctx) return;
+            ctx.drawImage(video, 0, 0, 320, 240);
+            const dataUrl = canvas.toDataURL("image/jpeg", 0.5);
+            const imageBase64 = dataUrl.split(",")[1];
+            fetch(`/api/session/${sessionId}/snapshot`, {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ imageBase64, aiState: liveAiStateRef.current }),
+            }).catch(() => { /* silent — non-critical */ });
+        };
+
+        // Upload after 5s, then every 15s (fallback — WS is primary)
+        const timeout = setTimeout(uploadSnapshot, 5000);
+        const interval = setInterval(uploadSnapshot, 15000);
+        return () => { clearTimeout(timeout); clearInterval(interval); };
+    }, [isExamActive, sessionId]);
 
     // ── Tab switch detection ──
     useEffect(() => {
@@ -432,6 +687,7 @@ export default function CandidateExamPage() {
 
                 if (fc === 0) {
                     setGazeDirection("CENTER");
+                    logViolation("NO_FACE", undefined, undefined, 0.9);
                     return;
                 }
 
@@ -449,6 +705,8 @@ export default function CandidateExamPage() {
 
                     // v6: Track blink frequency for stress/reading detection
                     blinkAnalysis.processEAR(ear);
+                    // Liveness blink challenge — pass EAR and landmarks
+                    liveness.processLandmarks(landmarks, ear);
 
                     // v7: Track pupil coordinate variance for micro-glances
                     microGaze.processGaze(landmarks);
@@ -497,9 +755,17 @@ export default function CandidateExamPage() {
                     faceProximity.processLandmarks(landmarks);
                     lipSync.processLandmarks(landmarks);
                     irisFocus.processLandmarks(landmarks);
+                    // NEW: Face identity verification (geometric baseline comparison)
+                    faceIdentity.processLandmarks(landmarks);
+                    // NEW: Phone-below-monitor detection (head pitch + iris Y)
+                    phoneBelowMonitor.processLandmarks(landmarks);
+                    // NEW: Emotion / stress detection
+                    emotion.processLandmarks(landmarks);
 
-                    // Cross-reference: voice detected + no lip movement = anomaly
-                    voiceActivity.checkCrossReference(!lipSync.isSuspicious);
+                    // Cross-reference: voice recognized + lips not moving = someone dictating
+                    // Use raw lipMovement (>0.008 = lips moving), NOT the derived isSuspicious flag,
+                    // so the check works even when ambient noise is quiet.
+                    voiceActivity.checkCrossReference(lipSync.lipMovement > 0.008);
 
 
 
@@ -539,7 +805,7 @@ export default function CandidateExamPage() {
             // AI detection init failed — show warning to user
             setAiInitFailed(true);
         }
-    }, [logViolation, blinkAnalysis, faceProximity, headPose, irisFocus, lipSync, microGaze, voiceActivity]);
+    }, [logViolation, blinkAnalysis, emotion, faceIdentity, faceProximity, headPose, irisFocus, lipSync, liveness, microGaze, phoneBelowMonitor, voiceActivity]);
 
     const handleVideoRef = useCallback(
         (ref: HTMLVideoElement | null) => {
@@ -576,14 +842,26 @@ export default function CandidateExamPage() {
 
         saveState({ examEnded: true });
 
+        // End the active question's attention window before submitting
+        attention.endQuestion();
+
+        // Merge per-question attention + emotion dominant into attentionData
+        const attentionRecords = attention.getAllRecords().map((r) => ({
+            ...r,
+            dominantEmotion: emotion.emotion,
+        }));
+
         await fetch(`/api/session/${sessionId}`, {
             method: "PATCH",
             headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ status: "completed" }),
+            body: JSON.stringify({
+                status: "completed",
+                attentionData: attentionRecords,
+            }),
         });
 
         router.push("/candidate/verify");
-    }, [examEnded, sessionId, router, stopAutoFlush, flush, saveState]);
+    }, [examEnded, sessionId, router, stopAutoFlush, flush, saveState, attention, emotion]);
 
     // ── Camera denied blocker ──
     if (permissionState === "camera_denied") {
@@ -641,6 +919,19 @@ export default function CandidateExamPage() {
                 onRequestFullScreen={requestFullScreen}
             />
 
+            {/* Liveness blink challenge overlay */}
+            {liveness.showBlinkPrompt && (
+                <div className="fixed inset-0 z-[9998] flex items-center justify-center pointer-events-none">
+                    <div className="bg-[#111]/95 border border-primary/60 rounded-2xl px-10 py-7 text-center shadow-2xl animate-[fadeInScale_0.2s_ease-out]">
+                        <p className="text-2xl font-bold text-white mb-2">Liveness Check</p>
+                        <p className="text-slate-400 text-sm">Please <span className="text-primary font-semibold">blink once</span> to confirm you are present</p>
+                        <div className="mt-4 flex justify-center">
+                            <span className="text-4xl animate-pulse">👁️</span>
+                        </div>
+                    </div>
+                </div>
+            )}
+
             {/* Mic denied banner */}
             {permissionState === "mic_denied" && (
                 <div className="fixed top-0 left-0 right-0 z-[60] bg-yellow-900/80 text-yellow-200 text-center text-xs py-1.5">
@@ -668,8 +959,8 @@ export default function CandidateExamPage() {
                             <span className="text-sm font-semibold">
                                 {session?.examId?.title || "Exam"}
                             </span>
-                            <span className="text-xs text-gray-500 ml-3">
-                                {violationCount > 0 ? `${violationCount} violations` : "Clean"}
+                            <span className="text-xs text-[#666] ml-3">
+                                {dbViolations.length > 0 ? `${dbViolations.length} violations` : "Clean"}
                             </span>
                         </div>
                     </div>
@@ -700,11 +991,11 @@ export default function CandidateExamPage() {
                 {/* Left Area: 75% Question View */}
                 <div className="flex-1 flex flex-col h-full min-w-0">
                     {quiz.loading ? (
-                        <div className="flex-1 rounded-2xl bg-slate-800/20 border border-slate-800 animate-pulse flex items-center justify-center">
+                        <div className="flex-1 rounded-2xl bg-[#1a1a1a] border border-[#3b3b3b] animate-pulse flex items-center justify-center">
                             <div className="w-8 h-8 border-2 border-primary border-t-transparent flex rounded-full animate-spin"></div>
                         </div>
                     ) : quiz.questions.length === 0 ? (
-                        <div className="flex-1 rounded-2xl bg-slate-800/50 border border-slate-700 flex flex-col items-center justify-center text-slate-400 gap-4">
+                        <div className="flex-1 rounded-2xl bg-[#1a1a1a] border border-[#3b3b3b] flex flex-col items-center justify-center text-[#a1a1a1] gap-4">
                             <p>No questions found for this exam.</p>
                             <button
                                 onClick={handleEndExam}
@@ -719,36 +1010,79 @@ export default function CandidateExamPage() {
                                 <QuestionView
                                     question={quiz.currentQuestion}
                                     response={quiz.responses[quiz.currentQuestion?._id]}
-                                    onAnswerChange={(updates) => quiz.saveResponse(quiz.currentQuestion._id, updates)}
+                                    onAnswerChange={(updates) => {
+                                        responseTimeProfiling.recordAnswer(quiz.currentQuestion._id);
+                                        quiz.saveResponse(quiz.currentQuestion._id, updates);
+                                    }}
                                     onToggleReview={() => quiz.toggleMarkForReview(quiz.currentQuestion._id)}
                                 />
                             </div>
 
                             {/* Question Navigation Footer */}
-                            <div className="h-16 mt-4 flex items-center justify-between px-6 bg-slate-800/80 border border-slate-700 rounded-2xl shrink-0">
+                            <div className="h-16 mt-4 flex items-center justify-between px-6 bg-[#1a1a1a] border border-[#3b3b3b] rounded-2xl shrink-0">
                                 <button
                                     onClick={quiz.goToPrev}
                                     disabled={quiz.currentIndex === 0}
-                                    className="px-6 py-2 rounded-xl text-sm font-semibold transition-colors bg-slate-700 hover:bg-slate-600 disabled:opacity-50 disabled:cursor-not-allowed"
+                                    className="px-6 py-2 rounded-xl text-sm font-semibold transition-colors bg-[#262626] hover:bg-[#2e2e2e] border border-[#3b3b3b] disabled:opacity-50 disabled:cursor-not-allowed"
                                 >
                                     Previous
                                 </button>
 
-                                <span className="text-sm font-mono text-slate-400">
+                                <span className="text-sm font-mono text-[#a1a1a1]">
                                     {quiz.currentIndex + 1} / {quiz.questions.length}
                                 </span>
 
                                 {quiz.currentIndex === quiz.questions.length - 1 ? (
                                     <button
-                                        onClick={handleEndExam}
+                                        onClick={() => {
+                                            // Analyze final answer before submitting
+                                            const q = quiz.currentQuestion;
+                                            const resp = quiz.responses[q?._id];
+                                            const answerText = resp?.submittedCode || "";
+                                            if (answerText && answerText.length >= 30 && sessionId && user) {
+                                                fetch("/api/ai/analyze-answer", {
+                                                    method: "POST",
+                                                    headers: { "Content-Type": "application/json" },
+                                                    body: JSON.stringify({
+                                                        sessionId,
+                                                        candidateId: user._id,
+                                                        questionText: q.text || "",
+                                                        answerText,
+                                                        timeSpentSeconds: responseTimeProfiling.avgResponseTime ?? 0,
+                                                        questionIndex: quiz.currentIndex,
+                                                    }),
+                                                }).catch(() => {});
+                                            }
+                                            handleEndExam();
+                                        }}
                                         className="px-6 py-2 rounded-xl text-sm font-semibold transition-colors bg-primary hover:bg-primary-light text-black shadow-[0_0_15px_rgba(255,255,255,0.3)]"
                                     >
                                         Submit Exam
                                     </button>
                                 ) : (
                                     <button
-                                        onClick={quiz.goToNext}
-                                        className="px-6 py-2 rounded-xl text-sm font-semibold transition-colors bg-white/10 hover:bg-white/20"
+                                        onClick={() => {
+                                            // Analyze current answer for AI-generation before navigating away
+                                            const q = quiz.currentQuestion;
+                                            const resp = quiz.responses[q?._id];
+                                            const answerText = resp?.submittedCode || "";
+                                            if (answerText && answerText.length >= 30 && sessionId && user) {
+                                                fetch("/api/ai/analyze-answer", {
+                                                    method: "POST",
+                                                    headers: { "Content-Type": "application/json" },
+                                                    body: JSON.stringify({
+                                                        sessionId,
+                                                        candidateId: user._id,
+                                                        questionText: q.text || "",
+                                                        answerText,
+                                                        timeSpentSeconds: responseTimeProfiling.avgResponseTime ?? 0,
+                                                        questionIndex: quiz.currentIndex,
+                                                    }),
+                                                }).catch(() => {});
+                                            }
+                                            quiz.goToNext();
+                                        }}
+                                        className="px-6 py-2 rounded-xl text-sm font-semibold transition-colors bg-[#262626] hover:bg-[#2e2e2e] border border-[#3b3b3b]"
                                     >
                                         Next
                                     </button>
@@ -762,7 +1096,7 @@ export default function CandidateExamPage() {
                 <div className="w-[340px] shrink-0 flex flex-col gap-4 h-full overflow-y-auto custom-scrollbar pr-1 pb-4">
 
                     {/* Minimized Camera Feed */}
-                    <div className="shrink-0 bg-slate-900 border border-slate-800 rounded-2xl overflow-hidden shadow-2xl relative">
+                    <div className="shrink-0 bg-[#0f0f0f] border border-[#3b3b3b] rounded-2xl overflow-hidden shadow-2xl relative">
                         <CameraFeed
                             onVideoRef={handleVideoRef}
                             gazeDirection={gazeDirection}
@@ -772,19 +1106,19 @@ export default function CandidateExamPage() {
                         />
 
                         {/* Live AI Status Indicators */}
-                        <div className="p-3 grid grid-cols-2 gap-2 border-t border-slate-800 bg-slate-900 relative z-10">
+                        <div className="p-3 grid grid-cols-2 gap-2 border-t border-[#3b3b3b] bg-[#0f0f0f] relative z-10">
                             <div className="flex flex-col">
-                                <span className="text-[10px] text-slate-500 uppercase tracking-widest">Network</span>
+                                <span className="text-[10px] text-[#666] uppercase tracking-widest">Network</span>
                                 <span className="text-xs font-mono mt-0.5 text-green-400">
                                     ONLINE
                                 </span>
                             </div>
                             <div className="flex flex-col">
-                                <span className="text-[10px] text-slate-500 uppercase tracking-widest flex items-center justify-between">
+                                <span className="text-[10px] text-[#666] uppercase tracking-widest flex items-center justify-between">
                                     Sync
                                     {quiz.isSyncing && <div className="w-1.5 h-1.5 rounded-full bg-blue-500 animate-pulse"></div>}
                                 </span>
-                                <span className={`text-xs font-mono mt-0.5 ${quiz.isSyncing ? "text-blue-400" : "text-slate-400"}`}>
+                                <span className={`text-xs font-mono mt-0.5 ${quiz.isSyncing ? "text-blue-400" : "text-[#a1a1a1]"}`}>
                                     {quiz.isSyncing ? "Saving..." : "Up to date"}
                                 </span>
                             </div>
@@ -792,19 +1126,31 @@ export default function CandidateExamPage() {
                     </div>
 
                     {/* AI Anomaly Mini-Feed */}
-                    <div className="shrink-0 bg-slate-800/30 border border-slate-800 rounded-xl p-3 flex flex-col gap-2">
+                    <div className="shrink-0 bg-[#1a1a1a] border border-[#3b3b3b] rounded-xl p-3 flex flex-col gap-2">
                         <div className="flex items-center justify-between">
-                            <span className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">AI Diagnostics</span>
+                            <span className="text-[10px] font-bold text-[#666] uppercase tracking-widest">AI Diagnostics</span>
                             <div className="w-2 h-2 rounded-full bg-green-500 animate-pulse"></div>
                         </div>
-                        <div className="text-xs text-slate-400 flex flex-col gap-1">
+                        <div className="text-xs text-[#a1a1a1] flex flex-col gap-1">
                             <div className="flex justify-between">
                                 <span>Violations:</span>
-                                <span className={violationCount > 0 ? "text-red-400 font-mono" : "text-green-400 font-mono"}>{violationCount}</span>
+                                <span className={dbViolations.length > 0 ? "text-red-400 font-mono" : "text-green-400 font-mono"}>{dbViolations.length}</span>
                             </div>
                             <div className="flex justify-between">
                                 <span>Look Away:</span>
                                 <span className={lookAwaySeconds > 0 ? "text-yellow-400 font-mono" : "text-green-400 font-mono"}>{lookAwaySeconds.toFixed(1)}s</span>
+                            </div>
+                            <div className="flex justify-between">
+                                <span>AI Monitor:</span>
+                                <span className={
+                                    geminiStatus === "connected" ? "text-green-400 font-mono" :
+                                    geminiStatus === "connecting" ? "text-yellow-400 font-mono animate-pulse" :
+                                    "text-blue-400 font-mono"
+                                }>
+                                    {geminiStatus === "connected" ? "Live" :
+                                     geminiStatus === "connecting" ? "Connecting..." :
+                                     "REST Active"}
+                                </span>
                             </div>
                         </div>
                     </div>
@@ -821,16 +1167,16 @@ export default function CandidateExamPage() {
                         </div>
                     )}
 
-                    {/* WebRTC Video Fallback */}
-                    {callStatus === "connected" && remoteStream && (
-                        <div className="shrink-0 h-[250px] mb-4">
+                    {/* WebRTC — recruiter video call (incoming ring + connected view) */}
+                    {callStatus !== "idle" && (
+                        <div className="shrink-0 mb-4">
                             <LiveVideoCall
                                 remoteStream={remoteStream}
                                 callStatus={callStatus}
-                                onEndCall={endCall}
                                 isRecruiter={false}
-                                onAccept={() => { }}
-                                onDecline={() => { }}
+                                onAccept={handleAcceptCall}
+                                onDecline={handleEndCallCandidate}
+                                onEndCall={handleEndCallCandidate}
                             />
                         </div>
                     )}

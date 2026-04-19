@@ -133,11 +133,17 @@ export function useAudioSpoofingDetection(
     useEffect(() => {
         if (!enabled) return;
 
-        let intervalId: NodeJS.Timeout;
+        // Use ref so cleanup can reliably cancel even if unmount races the async setup
+        const intervalRef = { id: undefined as NodeJS.Timeout | undefined };
+        let cancelled = false;
 
         const setupAudio = async () => {
             try {
                 const stream = await navigator.mediaDevices.getUserMedia({ audio: true, video: false });
+                if (cancelled) {
+                    stream.getTracks().forEach(t => t.stop());
+                    return;
+                }
                 mediaStreamRef.current = stream;
 
                 const AudioContext = window.AudioContext || (window as any).webkitAudioContext;
@@ -153,7 +159,7 @@ export function useAudioSpoofingDetection(
                 source.connect(analyser);
 
                 isRunning.current = true;
-                intervalId = setInterval(analyzeAudio, CONSTANTS.ANALYSIS_INTERVAL_MS);
+                intervalRef.id = setInterval(analyzeAudio, CONSTANTS.ANALYSIS_INTERVAL_MS);
 
             } catch (err) {
                 console.warn("Audio Spoofing hook failed to get mic:", err);
@@ -163,8 +169,9 @@ export function useAudioSpoofingDetection(
         setupAudio();
 
         return () => {
+            cancelled = true;
             isRunning.current = false;
-            clearInterval(intervalId);
+            if (intervalRef.id !== undefined) clearInterval(intervalRef.id);
 
             if (audioContextRef.current && audioContextRef.current.state !== 'closed') {
                 audioContextRef.current.close().catch(() => { });

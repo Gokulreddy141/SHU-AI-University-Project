@@ -12,6 +12,7 @@ interface KeystrokeDynamicsState {
     profile: KeystrokeProfile;
     isAnomalous: boolean;
     totalKeystrokes: number;
+    identityMismatch: boolean;
 }
 
 // Thresholds for anomaly detection
@@ -20,6 +21,30 @@ const HOLD_DURATION_VARIANCE_THRESHOLD = 0.1; // Suspiciously low variance = bot
 const BURST_THRESHOLD_MS = 15;                // Keys pressed < 15ms apart = paste/macro
 const BURST_COUNT_THRESHOLD = 5;              // 5+ burst events = suspicious
 const COOLDOWN_MS = 30000;                    // 30 seconds between violation reports
+
+// Typing Identity (Mahalanobis distance)
+const IDENTITY_BASELINE_SAMPLES = 50;        // Build baseline over 50 keystrokes
+const IDENTITY_CHECK_INTERVAL = 30;          // Check every 30 keystrokes after baseline
+const MAHALANOBIS_THRESHOLD = 3.5;           // z-score > 3.5 = likely different typist
+const IDENTITY_COOLDOWN_MS = 120000;         // 2 minutes between identity mismatch reports
+
+/**
+ * Computes the Mahalanobis distance of a new sample against a baseline distribution.
+ * Features: [avgHold, holdCV, avgFlight, flightCV]
+ * A distance > 3.5 means the current typing is statistically very different from baseline.
+ */
+function mahalanobisDistance(
+    sample: number[],
+    mean: number[],
+    stdDev: number[]
+): number {
+    return Math.sqrt(
+        sample.reduce((sum, val, i) => {
+            const normalized = stdDev[i] > 0.001 ? (val - mean[i]) / stdDev[i] : 0;
+            return sum + normalized * normalized;
+        }, 0)
+    );
+}
 
 /**
  * Monitors keystroke timing patterns to detect:
@@ -36,6 +61,7 @@ export function useKeystrokeDynamics(
         profile: { avgHoldDuration: 0, avgFlightTime: 0, typingSpeed: 0, burstCount: 0 },
         isAnomalous: false,
         totalKeystrokes: 0,
+        identityMismatch: false,
     });
 
     const keyDownTimes = useRef<Map<string, number>>(new Map());
@@ -43,16 +69,14 @@ export function useKeystrokeDynamics(
     const flightTimes = useRef<number[]>([]);
     const lastKeyUpTime = useRef<number>(0);
     const burstCount = useRef<number>(0);
-    const sessionStartTime = useRef<number>();
+    const sessionStartTime = useRef<number>(0);
     const lastViolationTime = useRef<number>(0);
+    const lastIdentityViolationTime = useRef<number>(0);
     const totalKeystrokes = useRef<number>(0);
 
-    // Initialize session start time in useEffect to avoid purity violation
-    useEffect(() => {
-        if (!sessionStartTime.current) {
-            sessionStartTime.current = Date.now();
-        }
-    }, []);
+    // Identity baseline: feature vectors [avgHold, holdCV, avgFlight, flightCV]
+    const identityBaseline = useRef<{ mean: number[]; std: number[] } | null>(null);
+    const baselineSamples = useRef<number[][]>([]);
 
     const logViolation = useCallback(
         async (profile: KeystrokeProfile) => {
@@ -80,10 +104,34 @@ export function useKeystrokeDynamics(
         [sessionId, candidateId]
     );
 
+    const logIdentityViolation = useCallback(
+        async (distance: number) => {
+            const now = Date.now();
+            if (now - lastIdentityViolationTime.current < IDENTITY_COOLDOWN_MS) return;
+            lastIdentityViolationTime.current = now;
+
+            try {
+                await fetch("/api/violation", {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({
+                        sessionId,
+                        candidateId,
+                        type: "TYPING_IDENTITY_MISMATCH",
+                        timestamp: new Date().toISOString(),
+                        confidence: Math.min(0.95, 0.6 + (distance - MAHALANOBIS_THRESHOLD) / 10),
+                        direction: `MAHALANOBIS:${distance.toFixed(2)}`,
+                    }),
+                });
+            } catch {
+                // Silently fail
+            }
+        },
+        [sessionId, candidateId]
+    );
+
     useEffect(() => {
         if (!enabled) return;
-
-        sessionStartTime.current = Date.now();
 
         const handleKeyDown = (e: KeyboardEvent) => {
             // Ignore modifier keys and navigation keys
@@ -130,6 +178,20 @@ export function useKeystrokeDynamics(
             }
         };
 
+        const buildFeatureVector = (holds: number[], flights: number[]): number[] => {
+            const avgHold = holds.reduce((a, b) => a + b, 0) / holds.length;
+            const holdVar = holds.reduce((s, h) => s + (h - avgHold) ** 2, 0) / holds.length;
+            const holdCV = Math.sqrt(holdVar) / (avgHold || 1);
+
+            const avgFlight = flights.length > 0 ? flights.reduce((a, b) => a + b, 0) / flights.length : 0;
+            const flightVar = flights.length > 0
+                ? flights.reduce((s, f) => s + (f - avgFlight) ** 2, 0) / flights.length
+                : 0;
+            const flightCV = Math.sqrt(flightVar) / (avgFlight || 1);
+
+            return [avgHold, holdCV, avgFlight, flightCV];
+        };
+
         const analyzeProfile = () => {
             const holds = holdDurations.current;
             const flights = flightTimes.current;
@@ -142,7 +204,7 @@ export function useKeystrokeDynamics(
 
             // Calculate hold duration variance (normalized)
             const holdVariance = holds.reduce((sum, h) => sum + Math.pow(h - avgHold, 2), 0) / holds.length;
-            const holdCV = Math.sqrt(holdVariance) / (avgHold || 1); // Coefficient of variation
+            const holdCV = Math.sqrt(holdVariance) / (avgHold || 1);
 
             // Typing speed (characters per minute)
             const elapsedMinutes = (Date.now() - sessionStartTime.current) / 60000;
@@ -155,6 +217,32 @@ export function useKeystrokeDynamics(
                 burstCount: burstCount.current,
             };
 
+            // ── Typing identity check (Mahalanobis distance) ──
+            const featureVec = buildFeatureVector(holds, flights);
+            let identityMismatch = false;
+
+            if (!identityBaseline.current) {
+                // Build baseline: collect first IDENTITY_BASELINE_SAMPLES feature vectors
+                baselineSamples.current.push(featureVec);
+                if (baselineSamples.current.length >= IDENTITY_BASELINE_SAMPLES) {
+                    const n = baselineSamples.current.length;
+                    const mean = featureVec.map((_, i) =>
+                        baselineSamples.current.reduce((s, v) => s + v[i], 0) / n
+                    );
+                    const std = featureVec.map((_, i) => {
+                        const variance = baselineSamples.current.reduce((s, v) => s + (v[i] - mean[i]) ** 2, 0) / n;
+                        return Math.sqrt(variance);
+                    });
+                    identityBaseline.current = { mean, std };
+                }
+            } else if (totalKeystrokes.current % IDENTITY_CHECK_INTERVAL === 0) {
+                const dist = mahalanobisDistance(featureVec, identityBaseline.current.mean, identityBaseline.current.std);
+                if (dist > MAHALANOBIS_THRESHOLD) {
+                    identityMismatch = true;
+                    logIdentityViolation(dist);
+                }
+            }
+
             // Anomaly: suspiciously consistent timing (bot/macro) OR too many bursts (paste masking)
             const isAnomalous =
                 holdCV < HOLD_DURATION_VARIANCE_THRESHOLD ||
@@ -164,6 +252,7 @@ export function useKeystrokeDynamics(
                 profile,
                 isAnomalous,
                 totalKeystrokes: totalKeystrokes.current,
+                identityMismatch,
             });
 
             if (isAnomalous) {
@@ -178,7 +267,7 @@ export function useKeystrokeDynamics(
             document.removeEventListener("keydown", handleKeyDown);
             document.removeEventListener("keyup", handleKeyUp);
         };
-    }, [enabled, logViolation]);
+    }, [enabled, logViolation, logIdentityViolation]);
 
     return state;
 }

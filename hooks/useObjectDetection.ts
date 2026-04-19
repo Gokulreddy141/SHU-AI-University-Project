@@ -96,6 +96,11 @@ export function useObjectDetection(
 
         return () => {
             cancelled = true;
+            // Dispose the TF.js model to free GPU memory
+            if (modelRef.current && typeof (modelRef.current as any).dispose === "function") {
+                (modelRef.current as any).dispose();
+                modelRef.current = null;
+            }
         };
     }, [enabled]);
 

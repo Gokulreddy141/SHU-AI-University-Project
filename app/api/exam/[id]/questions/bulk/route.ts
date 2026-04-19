@@ -68,10 +68,10 @@ export async function POST(
             count: insertedQuestions.length,
         }, { status: 201 });
 
-    } catch (error: unknown) {
+    } catch (error) {
         console.error("Bulk Import Error:", error);
         return NextResponse.json(
-            { message: error.message || "Internal Server Error" },
+            { message: error instanceof Error ? error.message : "Internal Server Error" },
             { status: 500 }
         );
     }

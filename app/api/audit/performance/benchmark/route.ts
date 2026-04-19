@@ -97,7 +97,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     
     try {
       metrics = await executeBenchmark(performanceAnalyzer, systemId, duration);
-    } catch {
+    } catch (error) {
 
       console.error(`Benchmark execution failed for ${systemId}:`, error);
       return NextResponse.json(
@@ -132,7 +132,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
 
     return NextResponse.json(response);
 
-  } catch {
+  } catch (error) {
 
     console.error('Error executing performance benchmark:', error);
     return NextResponse.json(

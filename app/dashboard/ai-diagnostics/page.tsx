@@ -1,6 +1,5 @@
 "use client";
 import React, { useState, useEffect, useRef, useCallback } from "react";
-import DashboardShell from "@/components/layout/DashboardShell";
 import DiagnosticsCameraFeed from "@/components/features/DiagnosticsCameraFeed";
 import { useAuth } from "@/hooks/useAuth";
 
@@ -168,8 +167,7 @@ export default function AIDiagnosticsDashboard() {
     if (!isHydrated || !user) return null;
 
     return (
-        <DashboardShell userName={user.name} userRole="recruiter">
-            <div className="max-w-[1600px] mx-auto py-8">
+        <div className="max-w-[1600px] mx-auto py-8">
 
                 <div className="mb-8">
                     <h1 className="text-3xl font-bold text-white mb-2">AI Diagnostics Panel</h1>
@@ -239,7 +237,6 @@ export default function AIDiagnosticsDashboard() {
                     </div>
 
                 </div>
-            </div>
-        </DashboardShell>
+        </div>
     );
 }

@@ -5,6 +5,7 @@ import CandidateResponse from "@/models/CandidateResponse";
 import Question from "@/models/Question";
 import { handleApiError } from "@/lib/apiUtils";
 import { calculateIntegrityScore } from "@/lib/integrity";
+import { generateWithGemini } from "@/lib/gemini";
 
 interface LeanExam {
     flagThreshold?: number;
@@ -160,14 +161,74 @@ export async function PATCH(
                 session.maxScore = maxScore;
                 session.gradingStatus = requiresManual ? "manual_review_required" : "auto_graded";
 
+                // Persist per-question attention data sent from the candidate client
+                if (Array.isArray(body.attentionData) && body.attentionData.length > 0) {
+                    session.attentionData = body.attentionData;
+                }
+
                 // Auto-flag based on integrity threshold
                 const exam = await (await import("@/models/Exam")).default
                     .findById(session.examId)
-                    .select("flagThreshold")
+                    .select("flagThreshold title")
                     .lean();
                 const threshold = (exam as LeanExam)?.flagThreshold ?? 50;
                 if (session.integrityScore < threshold) {
                     session.status = "flagged";
+                }
+
+                // Generate post-session AI report via Gemini (non-blocking — best effort)
+                try {
+                    const violationSummary = session.violationSummary.toObject();
+                    const topViolations = Object.entries(violationSummary)
+                        .filter(([, v]) => (v as number) > 0)
+                        .sort(([, a], [, b]) => (b as number) - (a as number))
+                        .slice(0, 6)
+                        .map(([k, v]) => `${k}: ${v}`)
+                        .join(", ");
+
+                    const avgAttention =
+                        session.attentionData && session.attentionData.length > 0
+                            ? Math.round(
+                                  session.attentionData.reduce(
+                                      (s: number, d: { attentionScore: number }) => s + d.attentionScore,
+                                      0
+                                  ) / session.attentionData.length
+                              )
+                            : null;
+
+                    const prompt = `You are an AI exam integrity analyst. Analyse this candidate exam session and provide a concise integrity report.
+
+Exam: ${(exam as LeanExam & { title?: string })?.title ?? "Technical Exam"}
+Duration: ${session.startTime && session.endTime ? Math.round((session.endTime.getTime() - session.startTime.getTime()) / 60000) : "unknown"} minutes
+Integrity score: ${session.integrityScore}/100
+Exam score: ${earnedScore}/${maxScore}
+Violations detected: ${topViolations || "none"}
+Average attention score: ${avgAttention !== null ? `${avgAttention}/100` : "not available"}
+
+Respond with a JSON object (no markdown fences) with exactly these keys:
+- "summary": 2-3 sentence plain-English summary of integrity concerns and candidate behaviour
+- "riskLevel": one of "low", "moderate", "high", "critical"
+- "flags": array of short strings naming the main concerns (max 5)
+
+Only output the JSON object.`;
+
+                    const raw = await generateWithGemini(prompt);
+                    // Strip any accidental markdown fences
+                    const clean = raw.replace(/```json|```/g, "").trim();
+                    const parsed = JSON.parse(clean) as {
+                        summary: string;
+                        riskLevel: "low" | "moderate" | "high" | "critical";
+                        flags: string[];
+                    };
+
+                    session.aiReport = {
+                        summary: parsed.summary ?? null,
+                        riskLevel: parsed.riskLevel ?? null,
+                        flags: Array.isArray(parsed.flags) ? parsed.flags : [],
+                        generatedAt: new Date(),
+                    };
+                } catch {
+                    // Gemini unavailable — skip report, do not fail the request
                 }
             }
         }

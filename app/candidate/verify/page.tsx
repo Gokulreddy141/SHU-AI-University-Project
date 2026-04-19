@@ -86,8 +86,12 @@ function CandidateVerifyContent() {
             // Look up the exam
             const examRes = await fetch(`/api/exam/join/${sessionCode.trim()}`);
             if (!examRes.ok) {
-                const err = await examRes.json();
-                throw new Error(err.message || "Invalid session code");
+                let message = "Invalid session code. Please check and try again.";
+                try {
+                    const err = await examRes.json();
+                    if (err?.message) message = err.message;
+                } catch { /* non-JSON response — keep default message */ }
+                throw new Error(message);
             }
             const exam = await examRes.json();
             setExamInfo(exam);
