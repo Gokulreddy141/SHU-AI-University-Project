@@ -52,6 +52,7 @@ import { useLivenessDetection } from "@/hooks/useLivenessDetection";
 import { useBehavioralConsistency } from "@/hooks/useBehavioralConsistency";
 import { useAttentionScore } from "@/hooks/useAttentionScore";
 import { useEmotionDetection } from "@/hooks/useEmotionDetection";
+import { useSharedMic } from "@/hooks/useSharedMic";
 
 interface FaceMeshLandmark {
     x: number;
@@ -94,6 +95,8 @@ export default function CandidateExamPage() {
     const { id: sessionId } = useParams();
     const router = useRouter();
     const videoRef = useRef<HTMLVideoElement | null>(null);
+    // Holds the raw getUserMedia stream so we can stop all tracks on exam end
+    const rawStreamRef = useRef<MediaStream | null>(null);
 
     const [session, setSession] = useState<SessionData | null>(null);
     const [user, setUser] = useState<{ _id: string; name: string } | null>(null);
@@ -290,11 +293,14 @@ export default function CandidateExamPage() {
     useDevToolsDetection(() => { logViolation("DEVTOOLS_ACCESS"); }, isExamActive);
     useHardwareDetection(() => { logViolation("SECONDARY_MONITOR"); }, isExamActive);
 
+    // Shared microphone stream — one getUserMedia for all audio hooks
+    const sharedMic = useSharedMic(isExamActive && isMicAvailable);
+
     // AI Proctoring Hooks (side effects only, no need to capture unused return values)
     const lipSync = useLipSyncDetection(sessionId as string, user?._id || "");
     useObjectDetection(videoRef, sessionId as string, user?._id || "", isExamActive);
     const headPose = useHeadPoseEstimation(sessionId as string, user?._id || "");
-    const ambientNoise = useAmbientNoiseDetection(sessionId as string, user?._id || "", isExamActive && isMicAvailable);
+    const ambientNoise = useAmbientNoiseDetection(sessionId as string, user?._id || "", isExamActive && isMicAvailable, sharedMic);
     
     // Bridge: share audio level from ambient noise → lip-sync (avoids duplicate mic stream)
     useEffect(() => {
@@ -322,7 +328,7 @@ export default function CandidateExamPage() {
     useBrowserFingerprint(sessionId as string, user?._id || "", isExamActive);
     const blinkAnalysis = useBlinkFrequencyAnalysis(sessionId as string, user?._id || "");
     useVirtualDeviceDetection(sessionId as string, user?._id || "", isExamActive);
-    useAudioSpoofingDetection(sessionId as string, user?._id || "", isExamActive && isMicAvailable);
+    useAudioSpoofingDetection(sessionId as string, user?._id || "", isExamActive && isMicAvailable, sharedMic);
     const microGaze = useMicroGazeTracker(sessionId as string, user?._id || "");
     useSandboxEnvironmentCheck(sessionId as string, user?._id || "", isExamActive);
 
@@ -338,9 +344,9 @@ export default function CandidateExamPage() {
 
     // ── NEW: Tier 2 Features ──
     // Advanced VAD (replaces Web Speech API — energy + ZCR + spectral analysis)
-    const sileroVAD = useSileroVAD(sessionId as string, user?._id || "", isExamActive && isMicAvailable);
+    const sileroVAD = useSileroVAD(sessionId as string, user?._id || "", isExamActive && isMicAvailable, sharedMic);
     // Speaker voice identity (spectral fingerprint, detects person swap)
-    useSpeakerIdentity(sessionId as string, user?._id || "", isExamActive && isMicAvailable);
+    useSpeakerIdentity(sessionId as string, user?._id || "", isExamActive && isMicAvailable, sharedMic);
 
     // ── NEW: Tier 3 Features ──
     // Liveness detection (active blink challenge + passive micro-movement)
@@ -813,6 +819,18 @@ export default function CandidateExamPage() {
             if (ref && !aiEnabled) {
                 setAiEnabled(true);
                 initAiDetection(ref);
+                // Capture the raw stream so we can stop all tracks on exam end
+                if (ref.srcObject instanceof MediaStream) {
+                    rawStreamRef.current = ref.srcObject;
+                } else {
+                    // Stream may arrive slightly after the element — poll once
+                    const pollStream = () => {
+                        if (ref.srcObject instanceof MediaStream) {
+                            rawStreamRef.current = ref.srcObject;
+                        }
+                    };
+                    ref.addEventListener("loadedmetadata", pollStream, { once: true });
+                }
             }
         },
         [aiEnabled, initAiDetection]
@@ -825,19 +843,30 @@ export default function CandidateExamPage() {
         stopAutoFlush();
         await flush(); // CRITICAL: Ensure last batch of violations is saved *before* completing the session
 
-        // Stop AI detection properly
+        // Stop AI detection
         aiRunning.current = false;
-        
         if (cameraRef.current) {
             cameraRef.current.stop();
+            cameraRef.current = null;
         }
-        
-        // Wait a bit for any pending frames to complete
+
+        // Wait for any pending frames to drain
         await new Promise(resolve => setTimeout(resolve, 100));
-        
+
         if (faceMeshRef.current) {
             faceMeshRef.current.close();
             faceMeshRef.current = null;
+        }
+
+        // Stop ALL raw camera/mic tracks — releases the browser camera indicator
+        if (rawStreamRef.current) {
+            rawStreamRef.current.getTracks().forEach(t => t.stop());
+            rawStreamRef.current = null;
+        }
+        // Also stop any tracks still attached to the video element
+        if (videoRef.current?.srcObject instanceof MediaStream) {
+            (videoRef.current.srcObject as MediaStream).getTracks().forEach(t => t.stop());
+            videoRef.current.srcObject = null;
         }
 
         saveState({ examEnded: true });
@@ -860,7 +889,7 @@ export default function CandidateExamPage() {
             }),
         });
 
-        router.push("/candidate/verify");
+        router.push(`/candidate/exam/${sessionId}/complete`);
     }, [examEnded, sessionId, router, stopAutoFlush, flush, saveState, attention, emotion]);
 
     // ── Camera denied blocker ──

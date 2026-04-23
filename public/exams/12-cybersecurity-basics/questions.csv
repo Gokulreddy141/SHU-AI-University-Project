@@ -1,0 +1,26 @@
+Type,Text,Points,Options,CorrectIndex,Languages,StarterCode,ExpectedOutput
+MCQ,What is SQL injection?,3,A database optimisation technique;An attack where malicious SQL is inserted into input fields to manipulate or extract data from a database,1,,,
+MCQ,What does HTTPS provide over HTTP?,3,Faster response times;Encryption of data in transit using TLS preventing eavesdropping and tampering,1,,,
+MCQ,What is Cross-Site Scripting (XSS)?,3,A server-side vulnerability;An attack where malicious scripts are injected into web pages viewed by other users often via unsanitised input,1,,,
+MCQ,What is the principle of least privilege?,3,Users should have the most access for productivity;Users and systems should be granted only the minimum permissions required to perform their function,1,,,
+MCQ,What is a rainbow table attack?,3,A brute-force attack on WiFi;A precomputed table of hash-to-plaintext mappings used to reverse password hashes — mitigated by salting,1,,,
+MCQ,What does CORS stand for and why does it matter?,3,Content Origin Resource System — for caching;Cross-Origin Resource Sharing — a browser security mechanism that restricts scripts from making requests to a different domain than the one that served the page,1,,,
+MCQ,What is a man-in-the-middle (MITM) attack?,3,An attack on a database;An attack where an adversary intercepts and potentially alters communication between two parties who believe they are communicating directly,1,,,
+MCQ,What is the purpose of salting a password before hashing?,3,To make passwords longer;To add a unique random value to each password before hashing preventing identical passwords from producing the same hash and defeating rainbow tables,1,,,
+MCQ,What is CSRF (Cross-Site Request Forgery)?,3,A type of DDoS attack;An attack that tricks an authenticated user into unknowingly submitting a malicious request on a site they are logged into,1,,,
+MCQ,What does a Content Security Policy (CSP) header do?,3,Compresses HTTP responses;Restricts which sources of content (scripts styles images) a browser may load reducing XSS attack surface,1,,,
+MCQ,What is the difference between authentication and authorisation?,3,They are the same thing;Authentication verifies who you are while authorisation determines what you are allowed to do,1,,,
+MCQ,What is a JWT and what are its three parts?,3,A session cookie;A JSON Web Token composed of a Header (algorithm type) a Payload (claims) and a Signature used for stateless authentication,1,,,
+CODING,Write a Node.js function called 'sanitizeInput' that removes any HTML tags and script content from a user-supplied string to prevent basic XSS attacks.,5,,,javascript,"function sanitizeInput(input) {
+  // write your solution here
+}","Hello World"
+CODING,Write a JavaScript function called 'generateCSRFToken' that creates a cryptographically random hex string of 32 characters using the Node.js crypto module for use as a CSRF token.,5,,,javascript,"const crypto = require('crypto');
+
+function generateCSRFToken() {
+  // write your solution here
+}","a3f8c2e1b9d047a6c5f3e2d1b8a7c4f0"
+CODING,Write a JavaScript function called 'rateLimit' that takes a userId and returns true if the user is allowed to make a request. Allow maximum 5 requests per 60 seconds per user. Use an in-memory store.,8,,,javascript,"const requestLog = {};
+
+function rateLimit(userId) {
+  // write your solution here
+}",true

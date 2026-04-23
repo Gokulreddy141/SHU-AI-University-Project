@@ -15,11 +15,25 @@ export async function GET(req: Request) {
 
         const { searchParams } = new URL(req.url);
         const recruiterId = searchParams.get("recruiterId");
+        const startDateParam = searchParams.get("startDate");
+        const endDateParam = searchParams.get("endDate");
 
         // Build a filter: if recruiterId provided, scope to that recruiter; otherwise global
         const sessionMatch: Record<string, unknown> = {};
         if (recruiterId && mongoose.Types.ObjectId.isValid(recruiterId)) {
             sessionMatch.recruiterId = new mongoose.Types.ObjectId(recruiterId);
+        }
+
+        // Date range filter
+        if (startDateParam || endDateParam) {
+            const dateFilter: Record<string, Date> = {};
+            if (startDateParam) dateFilter.$gte = new Date(startDateParam);
+            if (endDateParam) {
+                const end = new Date(endDateParam);
+                end.setHours(23, 59, 59, 999);
+                dateFilter.$lte = end;
+            }
+            sessionMatch.createdAt = dateFilter;
         }
 
         const sixtyDaysAgo = new Date(
@@ -32,6 +46,7 @@ export async function GET(req: Request) {
             integrityTrends,
             recruiterSessionIds,
             totalSessionCount,
+            flaggedTrendsRaw,
         ] = await Promise.all([
             // 1. Global integrity + flagged count
             ExamSession.aggregate([
@@ -57,29 +72,20 @@ export async function GET(req: Request) {
                 {
                     $match: {
                         ...sessionMatch,
-                        createdAt: { $gte: sixtyDaysAgo },
+                        ...(!(startDateParam || endDateParam) && { createdAt: { $gte: sixtyDaysAgo } }),
                     },
                 },
                 {
                     $group: {
                         _id: {
-                            $dateToString: {
-                                format: "%b %d",
-                                date: "$createdAt",
-                            },
+                            $dateToString: { format: "%b %d", date: "$createdAt" },
                         },
                         score: { $avg: "$integrityScore" },
                         sortDate: { $first: "$createdAt" },
                     },
                 },
                 { $sort: { sortDate: 1 } },
-                {
-                    $project: {
-                        date: "$_id",
-                        score: { $round: ["$score", 1] },
-                        _id: 0,
-                    },
-                },
+                { $project: { date: "$_id", score: { $round: ["$score", 1] }, _id: 0 } },
             ]),
             // 3. Collect session IDs for violation queries
             ExamSession.find(sessionMatch)
@@ -90,6 +96,25 @@ export async function GET(req: Request) {
                 ),
             // 4. Total sessions = totalReports
             ExamSession.countDocuments(sessionMatch),
+            // 5. Flagged count per day trend
+            ExamSession.aggregate([
+                {
+                    $match: {
+                        ...sessionMatch,
+                        status: "flagged",
+                        ...(!(startDateParam || endDateParam) && { createdAt: { $gte: sixtyDaysAgo } }),
+                    },
+                },
+                {
+                    $group: {
+                        _id: { $dateToString: { format: "%b %d", date: "$createdAt" } },
+                        count: { $sum: 1 },
+                        sortDate: { $first: "$createdAt" },
+                    },
+                },
+                { $sort: { sortDate: 1 } },
+                { $project: { date: "$_id", count: 1, _id: 0 } },
+            ]),
         ]);
 
         const globalIntegrity =
@@ -322,6 +347,12 @@ export async function GET(req: Request) {
             count: v.count,
         }));
 
+        // --- Flagged trends ---
+        const flaggedTrends = (flaggedTrendsRaw as { date: string; count: number }[]).map(f => ({
+            date: f.date,
+            count: f.count,
+        }));
+
         // --- Extra stats ---
         const totalSessions = totalSessionCount;
         const completedSessions = await ExamSession.countDocuments({ ...sessionMatch, status: "completed" });
@@ -373,6 +404,7 @@ export async function GET(req: Request) {
             avgViolationsPerSession,
             // Real data
             integrityTrends,
+            flaggedTrends,
             heatmap,
             recentViolations: mappedViolations,
             topFlaggedSessions: topFlagged,

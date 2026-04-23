@@ -1,5 +1,6 @@
 "use client";
 import { useEffect, useRef, useState, useCallback } from "react";
+import type { SharedMic } from "./useSharedMic";
 
 interface AmbientNoiseState {
     audioLevel: number;       // Current RMS level (0..1)
@@ -8,21 +9,24 @@ interface AmbientNoiseState {
 }
 
 const NOISE_THRESHOLD = 0.04;       // RMS above this = significant audio
-const SUSTAINED_NOISE_MS = 8000;    // 8 seconds before flagging
-const COOLDOWN_MS = 20000;          // 20 seconds between flags
+const SUSTAINED_NOISE_MS = 12000;   // 12 seconds before flagging (was 8s — reduce false positives)
+const COOLDOWN_MS = 60000;          // 60 seconds between flags (was 20s)
 const CHECK_INTERVAL_MS = 200;      // Sample audio every 200ms
+const STARTUP_GRACE_MS = 15000;     // 15s after mic init before any violation
 
 /**
  * Detects sustained ambient noise (e.g. someone talking in background,
  * playing audio, or receiving dictation) without any lip movement.
- * 
- * This hook only monitors audio levels. Lip-sync cross-referencing
- * is handled by useLipSyncDetection.
+ *
+ * Accepts an optional SharedMic — when provided, skips getUserMedia and
+ * attaches its own AnalyserNode to the shared source. This prevents
+ * duplicate mic acquisitions when multiple audio hooks run together.
  */
 export function useAmbientNoiseDetection(
     sessionId: string,
     candidateId: string,
-    enabled: boolean
+    enabled: boolean,
+    sharedMic?: SharedMic | null
 ) {
     const [state, setState] = useState<AmbientNoiseState>({
         audioLevel: 0,
@@ -30,12 +34,15 @@ export function useAmbientNoiseDetection(
         isListening: false,
     });
 
+    // Own audio context/stream — only used when sharedMic is not provided
     const audioContextRef = useRef<AudioContext | null>(null);
-    const analyserRef = useRef<AnalyserNode | null>(null);
     const streamRef = useRef<MediaStream | null>(null);
+
+    const analyserRef = useRef<AnalyserNode | null>(null);
     const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
     const noiseStart = useRef<number | null>(null);
     const lastViolationTime = useRef<number>(0);
+    const initTime = useRef<number>(0);
     const audioDataRef = useRef<Float32Array<ArrayBuffer> | null>(null);
 
     const logViolation = useCallback(
@@ -65,50 +72,71 @@ export function useAmbientNoiseDetection(
         [sessionId, candidateId]
     );
 
-    // Initialize microphone and audio analysis
+    // Initialize audio — either attach to sharedMic or open own stream
     useEffect(() => {
         if (!enabled) return;
 
         let cancelled = false;
 
         const initAudio = async () => {
-            try {
-                const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-                if (cancelled) {
-                    stream.getTracks().forEach((t) => t.stop());
+            let analyser: AnalyserNode;
+
+            if (sharedMic?.isReady && sharedMic.audioContext && sharedMic.sourceNode) {
+                // Attach own AnalyserNode to the shared source
+                analyser = sharedMic.audioContext.createAnalyser();
+                analyser.fftSize = 512;
+                sharedMic.sourceNode.connect(analyser);
+            } else {
+                // Fall back to own getUserMedia
+                try {
+                    const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+                    if (cancelled) {
+                        stream.getTracks().forEach((t) => t.stop());
+                        return;
+                    }
+
+                    const audioContext = new AudioContext();
+                    const source = audioContext.createMediaStreamSource(stream);
+                    analyser = audioContext.createAnalyser();
+                    analyser.fftSize = 512;
+                    source.connect(analyser);
+
+                    audioContextRef.current = audioContext;
+                    streamRef.current = stream;
+                } catch {
+                    // Mic access denied — degrade gracefully
                     return;
                 }
-
-                const audioContext = new AudioContext();
-                const source = audioContext.createMediaStreamSource(stream);
-                const analyser = audioContext.createAnalyser();
-                analyser.fftSize = 512;
-
-                source.connect(analyser);
-
-                audioContextRef.current = audioContext;
-                analyserRef.current = analyser;
-                streamRef.current = stream;
-                audioDataRef.current = new Float32Array(analyser.fftSize); // Pre-allocate once
-
-                setState((prev) => ({ ...prev, isListening: true }));
-            } catch {
-                // Mic access denied — degrade gracefully
             }
+
+            if (cancelled) {
+                analyser.disconnect();
+                return;
+            }
+
+            analyserRef.current = analyser;
+            audioDataRef.current = new Float32Array(analyser.fftSize);
+            initTime.current = Date.now();
+            setState((prev) => ({ ...prev, isListening: true }));
         };
 
         initAudio();
 
         return () => {
             cancelled = true;
-            if (streamRef.current) {
-                streamRef.current.getTracks().forEach((t) => t.stop());
+            analyserRef.current?.disconnect();
+            analyserRef.current = null;
+            // Only stop own stream — shared stream is managed by useSharedMic
+            if (!sharedMic) {
+                streamRef.current?.getTracks().forEach((t) => t.stop());
+                audioContextRef.current?.close().catch(() => {});
+                streamRef.current = null;
+                audioContextRef.current = null;
             }
-            if (audioContextRef.current) {
-                audioContextRef.current.close();
-            }
+            setState((prev) => ({ ...prev, isListening: false }));
         };
-    }, [enabled]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [enabled, sharedMic?.isReady]);
 
     // Audio sampling loop
     useEffect(() => {
@@ -134,8 +162,9 @@ export function useAmbientNoiseDetection(
                 isSuspicious,
             }));
 
-            // Track sustained noise
-            if (isSuspicious) {
+            // Track sustained noise — skip entirely during startup grace period
+            const withinGrace = Date.now() - initTime.current < STARTUP_GRACE_MS;
+            if (!withinGrace && isSuspicious) {
                 if (!noiseStart.current) {
                     noiseStart.current = Date.now();
                 } else {

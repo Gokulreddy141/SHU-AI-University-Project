@@ -7,9 +7,11 @@ interface WindowFocusState {
 }
 
 // Ignore accidental/transient blurs (e.g. dev tools popping open) shorter than this
-const MIN_BLUR_DURATION_MS = 2000;
+const MIN_BLUR_DURATION_MS = 3000;
 // Only report one violation per window per cooldown period
-const VIOLATION_COOLDOWN_MS = 30000;
+const VIOLATION_COOLDOWN_MS = 45000;
+// Grace period after exam start — page may not be focused immediately on load
+const STARTUP_GRACE_MS = 15000;
 
 export function useWindowFocusDetection(
     sessionId: string,
@@ -22,6 +24,7 @@ export function useWindowFocusDetection(
     });
     const blurStartTime = useRef<number | null>(null);
     const lastViolationTime = useRef<number>(0);
+    const mountTime = useRef<number>(0);
 
     const logViolation = useCallback(async (duration: number) => {
         const now = Date.now();
@@ -53,9 +56,13 @@ export function useWindowFocusDetection(
     useEffect(() => {
         if (!enabled) return;
 
+        mountTime.current = Date.now();
+
         const handleBlur = () => {
             setState((prev) => ({ ...prev, isFocused: false }));
-            if (!blurStartTime.current) {
+            // Don't start the blur timer during the startup grace period —
+            // the browser may not have focused the tab yet on initial load.
+            if (!blurStartTime.current && Date.now() - mountTime.current >= STARTUP_GRACE_MS) {
                 blurStartTime.current = Date.now();
             }
         };
@@ -65,17 +72,15 @@ export function useWindowFocusDetection(
             if (blurStartTime.current) {
                 const durationMs = Date.now() - blurStartTime.current;
                 blurStartTime.current = null;
-                // Only log if the candidate was actually away for a meaningful duration
                 if (durationMs >= MIN_BLUR_DURATION_MS) {
                     logViolation(durationMs);
                 }
             }
         };
 
-        // Initial check
-        if (!document.hasFocus()) {
-            handleBlur();
-        }
+        // Do NOT check document.hasFocus() on mount — the tab may simply not be
+        // focused yet because the browser is still rendering. Any real blur will
+        // fire the event naturally after the grace period.
 
         window.addEventListener("blur", handleBlur);
         window.addEventListener("focus", handleFocus);

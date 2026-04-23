@@ -12,13 +12,15 @@ export function useLiveMonitor() {
     const [activeCount, setActiveCount] = useState(cached?.activeCount ?? 0);
     const [loading, setLoading] = useState(!cached);
     const [error, setError] = useState<string | null>(null);
+    const [latencyMs, setLatencyMs] = useState<number | null>(null);
 
     const fetchFeeds = useCallback(async () => {
         try {
-            // Filter by the logged-in recruiter's ID
             const stored = typeof window !== "undefined" ? localStorage.getItem("user") : null;
             const recruiterId = stored ? (JSON.parse(stored)._id || "") : "";
+            const t0 = Date.now();
             const res = await fetch(`/api/live/sessions${recruiterId ? `?recruiterId=${recruiterId}` : ""}`);
+            const elapsed = Date.now() - t0;
             if (!res.ok) throw new Error("Failed to fetch live feeds");
             const json = await res.json();
             const feedsData = json.feeds || [];
@@ -26,22 +28,23 @@ export function useLiveMonitor() {
 
             setFeeds(feedsData);
             setActiveCount(count);
+            setLatencyMs(elapsed);
             setCache(CACHE_KEY, { feeds: feedsData, activeCount: count });
             setError(null);
         } catch (err: unknown) {
             const message = err instanceof Error ? err.message : "Unknown error";
             setError(message);
+            setLatencyMs(null);
         } finally {
             setLoading(false);
         }
     }, []);
 
-    // Set up polling because this is a "live" war room
     useEffect(() => {
-        fetchFeeds(); // Initial fetch (shows cached data instantly if available)
-        const interval = setInterval(fetchFeeds, 5000); // Poll every 5 seconds
+        fetchFeeds();
+        const interval = setInterval(fetchFeeds, 5000);
         return () => clearInterval(interval);
     }, [fetchFeeds]);
 
-    return { feeds, activeCount, loading, error, refetch: fetchFeeds };
+    return { feeds, activeCount, loading, error, latencyMs, refetch: fetchFeeds };
 }

@@ -6,7 +6,7 @@ interface FullScreenState {
     violationCount: number;
 }
 
-const FULLSCREEN_COOLDOWN_MS = 5000;
+const FULLSCREEN_COOLDOWN_MS = 30000;
 
 export function useFullScreenEnforcement(
     sessionId: string,

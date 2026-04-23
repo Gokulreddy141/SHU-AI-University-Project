@@ -12,6 +12,7 @@ export interface AnalyticsData {
     passRate: number | null; // null = no finished sessions yet
     avgViolationsPerSession: number;
     integrityTrends: { date: string; score: number }[];
+    flaggedTrends: { date: string; count: number }[];
     heatmap: {
         category: string;
         densities: number[];
@@ -46,11 +47,14 @@ export interface LiveSessionFeed {
     candidateInitials: string;
     candidateAvatar?: string;
     examCode: string;
-    videoUrl?: string; // Optional real stream url
+    videoUrl?: string;
     status: "active" | "flagged" | "loading";
     activeViolation?: {
         message: string;
         type: string;
     };
-    snapshot?: string | null; // base64 JPEG from candidate webcam
+    snapshot?: string | null;
+    startedAt?: string | null;      // ISO string — session createdAt
+    totalViolations?: number;        // cumulative violation count
+    integrityScore?: number;         // current integrity score
 }

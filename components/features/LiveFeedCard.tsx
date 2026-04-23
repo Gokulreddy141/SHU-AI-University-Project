@@ -1,18 +1,44 @@
 "use client";
-import React from "react";
+import React, { useState, useEffect } from "react";
 import { LiveSessionFeed } from "@/types/reports";
+import { isCriticalViolation } from "@/lib/proctoring";
 
 interface LiveFeedCardProps {
     session: LiveSessionFeed;
-    onIntervene: (id: string) => void;
-    onJoin: (id: string) => void;
+    onJoin: () => void;
 }
 
-export default function LiveFeedCard({ session, onIntervene, onJoin }: LiveFeedCardProps) {
+function useElapsed(startedAt?: string | null): string {
+    const [elapsed, setElapsed] = useState("");
+
+    useEffect(() => {
+        if (!startedAt) return;
+        const start = new Date(startedAt).getTime();
+        const tick = () => {
+            const s = Math.floor((Date.now() - start) / 1000);
+            const h = Math.floor(s / 3600);
+            const m = Math.floor((s % 3600) / 60);
+            const sec = s % 60;
+            setElapsed(
+                h > 0
+                    ? `${h}:${String(m).padStart(2, "0")}:${String(sec).padStart(2, "0")}`
+                    : `${String(m).padStart(2, "0")}:${String(sec).padStart(2, "0")}`
+            );
+        };
+        tick();
+        const iv = setInterval(tick, 1000);
+        return () => clearInterval(iv);
+    }, [startedAt]);
+
+    return elapsed;
+}
+
+export default function LiveFeedCard({ session, onJoin }: LiveFeedCardProps) {
+    const elapsed = useElapsed(session.startedAt);
+
     if (session.status === "loading") {
         return (
             <div className="group relative aspect-video rounded-lg border border-[#3b3b3b] bg-[#1a1a1a] overflow-hidden flex items-center justify-center">
-                <div className="absolute inset-0 bg-[#0f0f0f] opacity-10"></div>
                 <div className="flex flex-col items-center gap-2">
                     <span className="material-symbols-outlined text-slate-600 text-3xl">videocam_off</span>
                     <p className="text-[10px] font-mono text-slate-600 uppercase">Feed Loading...</p>
@@ -21,14 +47,13 @@ export default function LiveFeedCard({ session, onIntervene, onJoin }: LiveFeedC
         );
     }
 
-    // Determine visual states based on flags
-    const isCritical = session.status === "flagged" && session.activeViolation?.message.includes("Critical");
+    const isCritical = session.status === "flagged" &&
+        !!session.activeViolation &&
+        isCriticalViolation(session.activeViolation.type);
     const isWarning = session.status === "flagged" && !isCritical;
-    const isClean = session.status === "active";
 
     let borderClass = "border-[#3b3b3b] hover:border-primary/50";
     let pulseClass = "";
-
     if (isCritical) {
         borderClass = "border-[#e64d4d]";
         pulseClass = "animate-[pulse-red_2s_cubic-bezier(0.4,0,0.6,1)_infinite]";
@@ -39,19 +64,19 @@ export default function LiveFeedCard({ session, onIntervene, onJoin }: LiveFeedC
     return (
         <div className={`group relative aspect-video rounded-lg border bg-[#1a1a1a] overflow-hidden transition-all ${borderClass} ${pulseClass}`}>
 
-            {/* Camera Feed Background — live snapshot from candidate webcam */}
+            {/* Camera snapshot */}
             {session.snapshot ? (
                 // eslint-disable-next-line @next/next/no-img-element
                 <img
                     alt="Candidate Live Feed"
-                    className={`h-full w-full object-cover transition-opacity ${isClean ? 'opacity-70 group-hover:opacity-100' : 'opacity-85'}`}
+                    className="h-full w-full object-cover transition-opacity opacity-80 group-hover:opacity-100"
                     src={`data:image/jpeg;base64,${session.snapshot}`}
                 />
             ) : session.candidateAvatar ? (
                 // eslint-disable-next-line @next/next/no-img-element
                 <img
                     alt="Candidate"
-                    className={`h-full w-full object-cover transition-opacity ${isClean ? 'opacity-60 group-hover:opacity-100' : 'opacity-80'}`}
+                    className="h-full w-full object-cover opacity-60 group-hover:opacity-90"
                     src={session.candidateAvatar}
                 />
             ) : (
@@ -61,63 +86,59 @@ export default function LiveFeedCard({ session, onIntervene, onJoin }: LiveFeedC
                 </div>
             )}
 
-            <div className="absolute inset-0 bg-gradient-to-t from-[#0f0f0f] via-transparent to-transparent"></div>
+            <div className="absolute inset-0 bg-gradient-to-t from-[#0f0f0f] via-transparent to-transparent" />
 
-            {/* Critical Red Fade Overlay */}
+            {/* Critical overlay */}
             {isCritical && (
-                <div className="absolute inset-0 bg-[#e64d4d]/10 ring-2 ring-inset ring-[#e64d4d]"></div>
+                <div className="absolute inset-0 bg-[#e64d4d]/10 ring-2 ring-inset ring-[#e64d4d]" />
             )}
 
-            {/* Top Left Violation Badge */}
-            {session.activeViolation && (
-                <div className="absolute top-2 left-2 flex flex-col gap-1.5 z-10">
-                    <div className={`
-                        backdrop-blur-md px-2 py-0.5 rounded flex items-center gap-1.5
-                        ${isCritical ? 'bg-[#e64d4d] border border-[#e64d4d]/50 text-white' : 'bg-amber-500/80 border border-amber-400 text-black'}
-                    `}>
-                        <span className="material-symbols-outlined text-[14px]">
+            {/* Violation badge + session timer (top) */}
+            <div className="absolute top-2 left-2 right-2 flex items-start justify-between z-10">
+                {session.activeViolation ? (
+                    <div className={`backdrop-blur-md px-2 py-0.5 rounded flex items-center gap-1.5 max-w-[70%] ${
+                        isCritical
+                            ? "bg-[#e64d4d] border border-[#e64d4d]/50 text-white"
+                            : "bg-amber-500/80 border border-amber-400 text-black"
+                    }`}>
+                        <span className="material-symbols-outlined text-[13px]">
                             {isCritical ? "warning" : "face_retouching_off"}
                         </span>
-                        <span className="text-[10px] font-mono font-bold uppercase tracking-tighter">
-                            {session.activeViolation.type}
+                        <span className="text-[9px] font-mono font-bold uppercase tracking-tighter truncate">
+                            {session.activeViolation.type.replace(/_/g, " ")}
                         </span>
                     </div>
-                </div>
-            )}
+                ) : <div />}
 
-            {/* Bottom Controls */}
-            <div className="absolute bottom-2 left-2 right-2 flex items-center justify-between z-10">
-                <div>
-                    <p className={`text-xs font-bold leading-none ${isClean && !session.candidateAvatar ? 'text-white/50' : 'text-white'}`}>
-                        {session.candidateName}
-                    </p>
-                    {session.candidateAvatar && (
-                        <p className={`text-[10px] font-mono mt-1 uppercase tracking-tighter ${isCritical ? 'text-slate-300' : 'text-slate-400'}`}>
-                            {session.examCode}
+                {/* Session timer */}
+                {elapsed && (
+                    <span className="text-[9px] font-mono bg-black/60 text-slate-300 px-1.5 py-0.5 rounded">
+                        {elapsed}
+                    </span>
+                )}
+            </div>
+
+            {/* Bottom: name + violations + JOIN button */}
+            <div className="absolute bottom-2 left-2 right-2 flex items-end justify-between z-10">
+                <div className="min-w-0">
+                    <p className="text-xs font-bold text-white leading-none truncate">{session.candidateName}</p>
+                    <p className="text-[9px] font-mono text-slate-400 mt-0.5 uppercase tracking-tighter truncate">{session.examCode}</p>
+                    {(session.totalViolations ?? 0) > 0 && (
+                        <p className="text-[9px] font-mono text-red-400 mt-0.5">
+                            {session.totalViolations} violation{session.totalViolations !== 1 ? "s" : ""}
                         </p>
                     )}
                 </div>
-
-                {isCritical ? (
-                    <button
-                        onClick={() => onIntervene(session.id)}
-                        className="bg-[#e64d4d] border border-[#e64d4d] text-white px-2 py-1 rounded text-[10px] font-bold"
-                    >
-                        INTERVENE
-                    </button>
-                ) : (
-                    <button
-                        onClick={() => onJoin(session.id)}
-                        className={`
-                            border px-2 py-1 rounded text-[10px] font-bold transition-colors
-                            ${!session.candidateAvatar
-                                ? 'bg-primary/10 border-primary/40 text-primary/50'
-                                : 'bg-primary/10 border-primary/40 text-primary hover:bg-primary hover:text-white'}
-                        `}
-                    >
-                        JOIN
-                    </button>
-                )}
+                <button
+                    onClick={onJoin}
+                    className={`ml-2 shrink-0 px-2.5 py-1 rounded text-[10px] font-bold border transition-colors ${
+                        isCritical
+                            ? "bg-[#e64d4d] border-[#e64d4d] text-white hover:bg-[#c94040]"
+                            : "bg-primary/10 border-primary/40 text-primary hover:bg-primary hover:text-white"
+                    }`}
+                >
+                    {isCritical ? "INTERVENE" : "JOIN"}
+                </button>
             </div>
         </div>
     );

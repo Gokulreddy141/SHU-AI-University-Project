@@ -31,6 +31,7 @@
     "bcryptjs": "^3.0.3",
     "livekit-client": "^2.17.2",
     "livekit-server-sdk": "^2.15.0",
+    "material-symbols": "^0.44.2",
     "mongoose": "^9.2.1",
     "next": "16.1.6",
     "papaparse": "^5.5.3",

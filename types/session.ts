@@ -1,19 +1,51 @@
 export interface IViolationSummary {
+    // Face & Gaze
     lookingAway: number;
-    multipleFaces: number;
     noFace: number;
-    lipSyncMismatch: number;
+    multipleFaces: number;
     faceMismatch: number;
-    tabSwitch: number;
-    copyPaste: number;
-    virtualCamera: number;
-    devtoolsAccess: number;
     livenessFailure: number;
+    faceProximityAnomaly: number;
+    headPoseAnomaly: number;
+    blinkPatternAnomaly: number;
+    pupilFocusAnomaly: number;
+    microGazeAnomaly: number;
+    stressDetected: number;
+    // Audio
+    lipSyncMismatch: number;
+    ambientNoise: number;
+    voiceActivityAnomaly: number;
+    voiceIdentityMismatch: number;
+    syntheticAudioDetected: number;
+    // Objects & Devices
+    phoneDetected: number;
+    notesDetected: number;
+    earpieceDetected: number;
+    handGestureAnomaly: number;
+    // Input & Behaviour
+    tabSwitch: number;
+    duplicateTab: number;
+    copyPaste: number;
+    clipboardPaste: number;
+    keyboardShortcut: number;
+    typingAnomaly: number;
+    mouseInactivity: number;
+    responseTimeAnomaly: number;
+    behavioralAnomaly: number;
+    semanticAnswerAnomaly: number;
+    // System & Environment
+    virtualCamera: number;
+    screenRecordingDetected: number;
+    extensionDetected: number;
+    devtoolsAccess: number;
+    llmDetected: number;
     secondaryMonitor: number;
+    environmentChange: number;
     fullscreenExit: number;
     windowBlur: number;
-    keyboardShortcut: number;
-    clipboardPaste: number;
+    networkAnomaly: number;
+    virtualDeviceDetected: number;
+    vmOrSandboxDetected: number;
 }
 
 export type SessionStatus =

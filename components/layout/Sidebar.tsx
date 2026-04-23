@@ -18,7 +18,13 @@ export default function Sidebar() {
     }, []);
 
     const isActive = (path: string) => {
-        const isMatch = pathname === path || pathname?.startsWith(`${path}/`);
+        // For the root dashboard/candidate paths use exact match only —
+        // otherwise every sub-route like /dashboard/reports would also
+        // highlight the Dashboard nav item (startsWith "/dashboard/").
+        const isExactRoot = path === "/dashboard" || path === "/candidate/dashboard";
+        const isMatch = isExactRoot
+            ? pathname === path
+            : pathname === path || pathname?.startsWith(`${path}/`);
         return isMatch
             ? "bg-primary/20 border-primary/30 text-primary border"
             : "text-slate-400 hover:bg-surface-hover hover:text-slate-200 border border-transparent";

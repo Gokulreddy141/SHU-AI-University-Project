@@ -29,7 +29,7 @@ export async function GET(req: Request) {
         // Fetch all in-progress sessions with populated refs
         const liveSessions = await ExamSession.find(sessionFilter)
             .select(
-                "candidateId examId integrityScore totalViolations status createdAt liveSnapshot liveSnapshotAt"
+                "candidateId examId integrityScore totalViolations status createdAt startTime liveSnapshot liveSnapshotAt"
             )
             .populate("candidateId", "name email")
             .populate("examId", "title sessionCode")
@@ -84,22 +84,22 @@ export async function GET(req: Request) {
                         id: sessionId.toString(),
                         candidateName: name,
                         candidateInitials: initials,
-                        examCode:
-                            exam?.sessionCode || exam?.title || "N/A",
-                        status: isFlagged
-                            ? ("flagged" as const)
-                            : ("active" as const),
+                        examCode: exam?.sessionCode || exam?.title || "N/A",
+                        status: isFlagged ? ("flagged" as const) : ("active" as const),
                         activeViolation: latestViolation
                             ? {
                                 type: latestViolation.type as string,
-                                message:
-                                    (latestViolation.confidence as number) >
-                                        0.8
-                                        ? "Critical Warning"
-                                        : "Moderate",
+                                message: (latestViolation.confidence as number) > 0.8
+                                    ? "Critical Warning"
+                                    : "Moderate",
                             }
                             : undefined,
-                        snapshot, // base64 JPEG or null
+                        snapshot,
+                        startedAt: session.createdAt
+                            ? new Date(session.createdAt as Date).toISOString()
+                            : null,
+                        totalViolations: (session.totalViolations as number) ?? 0,
+                        integrityScore: (session.integrityScore as number) ?? 100,
                     };
                 }
             )

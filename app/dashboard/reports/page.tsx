@@ -1,5 +1,5 @@
 "use client";
-import React, { useEffect, useState, useCallback } from "react";
+import { useEffect, useState, useCallback, useRef } from "react";
 import Image from "next/image";
 import { useRouter } from "next/navigation";
 import { useAnalytics } from "@/hooks/useAnalytics";
@@ -24,35 +24,58 @@ interface ViolationRow {
     timestamp: string;
 }
 
+type SortField = "timestamp" | "type" | "severity";
+type SortOrder = "asc" | "desc";
+type DatePreset = "7d" | "30d" | "90d" | "all";
+
 function statusBadge(status: string) {
     if (status === "flagged") return "bg-red-500/10 text-red-400 border-red-500/20";
     if (status === "completed") return "bg-slate-500/10 text-slate-400 border-slate-500/20";
     return "bg-amber-500/10 text-amber-400 border-amber-500/20";
 }
 
+function SortIcon({ active, order }: { active: boolean; order: SortOrder }) {
+    if (!active) return <span className="material-symbols-outlined text-[12px] text-slate-600 opacity-0 group-hover:opacity-100">unfold_more</span>;
+    return (
+        <span className="material-symbols-outlined text-[12px] text-primary">
+            {order === "asc" ? "arrow_upward" : "arrow_downward"}
+        </span>
+    );
+}
+
+
 export default function ReportsPage() {
     const router = useRouter();
     const { data, loading, error } = useAnalytics();
     const { exams, loading: examsLoading } = useExamReports();
 
-    // Paginated violations state
+    // Violations state
     const [violations, setViolations] = useState<ViolationRow[]>([]);
     const [vPage, setVPage] = useState(1);
     const [vTotalPages, setVTotalPages] = useState(1);
     const [vTotal, setVTotal] = useState(0);
     const [vLoading, setVLoading] = useState(false);
-    const [typeFilter, setTypeFilter] = useState<string>("");
+    const [typeFilter, setTypeFilter] = useState("");
+    const [severityFilter, setSeverityFilter] = useState("");
+    const [candidateSearch, setCandidateSearch] = useState("");
+    const [sortField, setSortField] = useState<SortField>("timestamp");
+    const [sortOrder, setSortOrder] = useState<SortOrder>("desc");
+    const [showAllTypes, setShowAllTypes] = useState(false);
+    const [datePreset, setDatePreset] = useState<DatePreset>("all");
+
+    // Scroll to violations table when clicking a bar
+    const violationsRef = useRef<HTMLDivElement>(null);
 
     // Auth guard
     useEffect(() => {
         const stored = localStorage.getItem("user");
-        if (!stored) {
-            router.push("/auth");
-        }
+        if (!stored) router.push("/auth");
     }, [router]);
 
-    // Fetch paginated violations
-    const fetchViolations = useCallback(async (page: number, type: string) => {
+    const fetchViolations = useCallback(async (
+        page: number, type: string, severity: string,
+        candidate: string, sf: SortField, so: SortOrder
+    ) => {
         setVLoading(true);
         try {
             const stored = localStorage.getItem("user");
@@ -60,6 +83,10 @@ export default function ReportsPage() {
             const params = new URLSearchParams({ page: String(page), limit: "10" });
             if (recruiterId) params.set("recruiterId", recruiterId);
             if (type) params.set("type", type);
+            if (severity) params.set("severity", severity);
+            if (candidate.trim()) params.set("candidateName", candidate.trim());
+            params.set("sortBy", sf);
+            params.set("sortOrder", so);
             const res = await fetch(`/api/reports/violations?${params}`);
             if (!res.ok) return;
             const json = await res.json();
@@ -72,13 +99,63 @@ export default function ReportsPage() {
     }, []);
 
     useEffect(() => {
-        fetchViolations(vPage, typeFilter);
-    }, [fetchViolations, vPage, typeFilter]);
+        fetchViolations(vPage, typeFilter, severityFilter, candidateSearch, sortField, sortOrder);
+    }, [fetchViolations, vPage, typeFilter, severityFilter, candidateSearch, sortField, sortOrder]);
 
     const handleTypeChange = (type: string) => {
         setTypeFilter(type);
         setVPage(1);
+        // Scroll to violations table
+        setTimeout(() => violationsRef.current?.scrollIntoView({ behavior: "smooth", block: "start" }), 100);
     };
+
+    const handleSort = (field: SortField) => {
+        if (sortField === field) {
+            setSortOrder(o => o === "asc" ? "desc" : "asc");
+        } else {
+            setSortField(field);
+            setSortOrder("desc");
+        }
+        setVPage(1);
+    };
+
+    const handleExportCSV = useCallback(async () => {
+        try {
+            const stored = localStorage.getItem("user");
+            const recruiterId = stored ? JSON.parse(stored)._id : "";
+            const params = new URLSearchParams({ page: "1", limit: "1000" });
+            if (recruiterId) params.set("recruiterId", recruiterId);
+            if (typeFilter) params.set("type", typeFilter);
+            if (severityFilter) params.set("severity", severityFilter);
+            if (candidateSearch.trim()) params.set("candidateName", candidateSearch.trim());
+            params.set("sortBy", sortField);
+            params.set("sortOrder", sortOrder);
+
+            const res = await fetch(`/api/reports/violations?${params}`);
+            const json = await res.json();
+            const rows: ViolationRow[] = json.violations || [];
+
+            const headers = ["Candidate", "Type", "Severity", "Timestamp", "Session ID"];
+            const csvRows = [
+                headers.join(","),
+                ...rows.map(v => [
+                    `"${v.candidateName}"`,
+                    `"${v.type}"`,
+                    v.severity,
+                    `"${v.timestamp}"`,
+                    v.sessionId || "",
+                ].join(",")),
+            ];
+
+            const blob = new Blob([csvRows.join("\n")], { type: "text/csv" });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement("a");
+            a.href = url;
+            a.download = `violations-${new Date().toISOString().split("T")[0]}.csv`;
+            a.click();
+            URL.revokeObjectURL(url);
+        } catch { /* silent */ }
+    }, [typeFilter, severityFilter, candidateSearch, sortField, sortOrder]);
 
     if (loading || !data) {
         return (
@@ -120,17 +197,54 @@ export default function ReportsPage() {
         );
     }
 
-    // Build violation type options from real breakdown data
     const violationTypeOptions = [
-        { value: "", label: "All Violations" },
+        { value: "", label: "All Types" },
         ...(data.violationBreakdown ?? []).map(v => ({
             value: v.type,
             label: `${v.type.replace(/_/g, " ")} (${v.count})`,
         })),
     ];
 
+    const breakdownMax = Math.max(...(data.violationBreakdown ?? []).map(v => v.count), 1);
+    const breakdownSlice = showAllTypes
+        ? (data.violationBreakdown ?? [])
+        : (data.violationBreakdown ?? []).slice(0, 12);
+
+    const DATE_PRESETS: { label: string; value: DatePreset }[] = [
+        { label: "7d", value: "7d" },
+        { label: "30d", value: "30d" },
+        { label: "90d", value: "90d" },
+        { label: "All time", value: "all" },
+    ];
+
     return (
         <div className="p-6 md:p-8 space-y-8 max-w-[1600px] mx-auto min-h-full">
+
+            {/* Page header with date range */}
+            <div className="flex items-center justify-between gap-4 flex-wrap">
+                <div>
+                    <h1 className="text-xl font-bold text-white">Reports</h1>
+                    <p className="text-xs text-slate-500 mt-0.5">Integrity analytics across all exam sessions</p>
+                </div>
+                <div className="flex items-center gap-2">
+                    <div className="flex items-center gap-1 bg-[#1a1a1a] border border-[#3b3b3b] rounded-lg p-1">
+                        {DATE_PRESETS.map(p => (
+                            <button
+                                key={p.value}
+                                onClick={() => setDatePreset(p.value)}
+                                className={`px-3 py-1 rounded text-xs font-semibold transition-colors ${
+                                    datePreset === p.value
+                                        ? "bg-primary text-white"
+                                        : "text-slate-400 hover:text-white"
+                                }`}
+                            >
+                                {p.label}
+                            </button>
+                        ))}
+                    </div>
+                </div>
+            </div>
+
             {/* Stats */}
             <ReportStatsGrid data={data} />
 
@@ -141,13 +255,12 @@ export default function ReportsPage() {
             <div className="grid grid-cols-1 xl:grid-cols-3 gap-6">
                 <HeatmapTable heatmap={data.heatmap} />
 
-                {/* Top Flagged Sessions — real data */}
+                {/* Top Risk Sessions */}
                 <div className="rounded-xl border border-[#3b3b3b] bg-[#1a1a1a] p-6 flex flex-col">
                     <div className="mb-5">
                         <h3 className="text-base font-bold text-white">Top Risk Sessions</h3>
                         <p className="text-xs text-slate-400 mt-0.5">Sessions with the highest violation counts.</p>
                     </div>
-
                     <div className="space-y-2 flex-1 overflow-y-auto pr-1">
                         {(data.topFlaggedSessions ?? []).length === 0 ? (
                             <div className="py-10 text-center text-slate-600">
@@ -178,18 +291,13 @@ export default function ReportsPage() {
                                         <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded border uppercase ${statusBadge(s.status)}`}>
                                             {s.status}
                                         </span>
-                                        <span className="text-[#e64d4d] font-mono font-bold text-sm">
-                                            {s.totalViolations}
-                                        </span>
-                                        <span className="material-symbols-outlined text-slate-600 group-hover:text-primary text-sm transition-colors">
-                                            arrow_forward
-                                        </span>
+                                        <span className="text-[#e64d4d] font-mono font-bold text-sm">{s.totalViolations}</span>
+                                        <span className="material-symbols-outlined text-slate-600 group-hover:text-primary text-sm transition-colors">arrow_forward</span>
                                     </div>
                                 </button>
                             ))
                         )}
                     </div>
-
                     <button
                         onClick={() => router.push("/dashboard/live")}
                         className="mt-5 w-full py-2.5 rounded-lg border border-[#3b3b3b] hover:border-primary/50 text-slate-400 hover:text-primary text-xs font-bold uppercase tracking-widest transition-all"
@@ -199,57 +307,129 @@ export default function ReportsPage() {
                 </div>
             </div>
 
-            {/* Violation Breakdown Bar */}
+            {/* Violation Type Breakdown — clickable bars */}
             {(data.violationBreakdown ?? []).length > 0 && (
                 <div className="rounded-xl border border-[#3b3b3b] bg-[#1a1a1a] p-6">
-                    <h3 className="text-base font-bold text-white mb-4">Violation Type Breakdown</h3>
+                    <div className="flex items-center justify-between mb-4">
+                        <h3 className="text-base font-bold text-white">Violation Type Breakdown</h3>
+                        <p className="text-[10px] text-slate-500">Click a bar to filter the violations table</p>
+                    </div>
                     <div className="space-y-2">
-                        {(() => {
-                            const max = Math.max(...data.violationBreakdown.map(v => v.count), 1);
-                            return data.violationBreakdown.slice(0, 12).map(v => (
-                                <div key={v.type} className="flex items-center gap-3">
-                                    <span className="text-[10px] font-mono text-slate-500 w-44 shrink-0 truncate uppercase">
+                        {breakdownSlice.map(v => {
+                            const isActive = typeFilter === v.type;
+                            return (
+                                <button
+                                    key={v.type}
+                                    onClick={() => handleTypeChange(isActive ? "" : v.type)}
+                                    className={`w-full flex items-center gap-3 group rounded-lg px-2 py-1 -mx-2 transition-colors ${
+                                        isActive ? "bg-primary/10" : "hover:bg-white/5"
+                                    }`}
+                                >
+                                    <span className={`text-[10px] font-mono w-44 shrink-0 truncate uppercase text-left ${
+                                        isActive ? "text-primary" : "text-slate-500"
+                                    }`}>
                                         {v.type.replace(/_/g, " ")}
                                     </span>
                                     <div className="flex-1 h-2 rounded-full bg-[#2a2a2a] overflow-hidden">
                                         <div
-                                            className="h-full rounded-full bg-primary/60"
-                                            style={{ width: `${(v.count / max) * 100}%` }}
+                                            className={`h-full rounded-full transition-all ${isActive ? "bg-primary" : "bg-primary/60 group-hover:bg-primary/80"}`}
+                                            style={{ width: `${(v.count / breakdownMax) * 100}%` }}
                                         />
                                     </div>
-                                    <span className="text-xs font-mono font-bold text-slate-400 w-8 text-right shrink-0">
+                                    <span className={`text-xs font-mono font-bold w-8 text-right shrink-0 ${isActive ? "text-primary" : "text-slate-400"}`}>
                                         {v.count}
                                     </span>
-                                </div>
-                            ));
-                        })()}
+                                    {isActive && (
+                                        <span className="material-symbols-outlined text-[13px] text-primary shrink-0">filter_alt</span>
+                                    )}
+                                </button>
+                            );
+                        })}
                     </div>
+                    {(data.violationBreakdown ?? []).length > 12 && (
+                        <button
+                            onClick={() => setShowAllTypes(s => !s)}
+                            className="mt-3 text-[10px] text-slate-500 hover:text-primary font-mono uppercase tracking-widest transition-colors"
+                        >
+                            {showAllTypes
+                                ? "Show top 12 ↑"
+                                : `Show all ${data.violationBreakdown.length} types ↓`}
+                        </button>
+                    )}
                 </div>
             )}
 
             {/* Exam-wise Drill-down */}
             <ExamReportSection exams={exams} loading={examsLoading} />
 
-            {/* Recent Integrity Violations — paginated */}
-            <div className="rounded-xl border border-[#3b3b3b] bg-[#1a1a1a] overflow-hidden">
+            {/* Violations Table */}
+            <div ref={violationsRef} className="rounded-xl border border-[#3b3b3b] bg-[#1a1a1a] overflow-hidden">
                 {/* Header */}
-                <div className="p-5 border-b border-[#3b3b3b] flex items-center justify-between gap-4">
-                    <div>
-                        <h3 className="text-base font-bold text-white">Recent Integrity Violations</h3>
-                        <p className="text-xs text-slate-500 mt-0.5">
-                            {vTotal > 0 ? `${vTotal} total violations` : "No violations recorded"}
-                            {typeFilter ? ` · filtered by ${typeFilter.replace(/_/g, " ")}` : ""}
-                        </p>
+                <div className="p-5 border-b border-[#3b3b3b] space-y-3">
+                    <div className="flex items-center justify-between gap-4 flex-wrap">
+                        <div>
+                            <h3 className="text-base font-bold text-white">Recent Integrity Violations</h3>
+                            <p className="text-xs text-slate-500 mt-0.5">
+                                {vTotal > 0 ? `${vTotal} total` : "No violations recorded"}
+                                {typeFilter ? ` · type: ${typeFilter.replace(/_/g, " ")}` : ""}
+                                {severityFilter ? ` · ${severityFilter}` : ""}
+                                {candidateSearch ? ` · candidate: "${candidateSearch}"` : ""}
+                            </p>
+                        </div>
+                        {/* Export CSV */}
+                        <button
+                            onClick={handleExportCSV}
+                            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-[#3b3b3b] bg-[#0f0f0f] text-xs text-slate-400 hover:text-white hover:border-primary/50 transition-colors"
+                        >
+                            <span className="material-symbols-outlined text-sm">download</span>
+                            Export CSV
+                        </button>
                     </div>
-                    <select
-                        value={typeFilter}
-                        onChange={e => handleTypeChange(e.target.value)}
-                        className="bg-[#0f0f0f] border border-[#3b3b3b] text-xs font-mono text-slate-300 rounded-lg p-2 min-w-[180px]"
-                    >
-                        {violationTypeOptions.map(opt => (
-                            <option key={opt.value} value={opt.value}>{opt.label}</option>
-                        ))}
-                    </select>
+
+                    {/* Filter row */}
+                    <div className="flex gap-2 flex-wrap items-center">
+                        {/* Candidate search */}
+                        <div className="relative">
+                            <span className="material-symbols-outlined absolute left-2 top-1/2 -translate-y-1/2 text-slate-500 text-[14px]">search</span>
+                            <input
+                                type="text"
+                                placeholder="Search candidate..."
+                                value={candidateSearch}
+                                onChange={e => { setCandidateSearch(e.target.value); setVPage(1); }}
+                                className="bg-[#0f0f0f] border border-[#3b3b3b] text-xs text-slate-300 rounded-lg pl-7 pr-3 py-1.5 w-44 focus:outline-none focus:border-primary/60"
+                            />
+                        </div>
+                        {/* Type filter */}
+                        <select
+                            value={typeFilter}
+                            onChange={e => handleTypeChange(e.target.value)}
+                            className="bg-[#0f0f0f] border border-[#3b3b3b] text-xs font-mono text-slate-300 rounded-lg p-1.5 min-w-[160px]"
+                        >
+                            {violationTypeOptions.map(opt => (
+                                <option key={opt.value} value={opt.value}>{opt.label}</option>
+                            ))}
+                        </select>
+                        {/* Severity filter */}
+                        <select
+                            value={severityFilter}
+                            onChange={e => { setSeverityFilter(e.target.value); setVPage(1); }}
+                            className="bg-[#0f0f0f] border border-[#3b3b3b] text-xs font-mono text-slate-300 rounded-lg p-1.5"
+                        >
+                            <option value="">All Severities</option>
+                            <option value="critical">Critical</option>
+                            <option value="moderate">Moderate</option>
+                        </select>
+                        {/* Clear filters */}
+                        {(typeFilter || severityFilter || candidateSearch) && (
+                            <button
+                                onClick={() => { setTypeFilter(""); setSeverityFilter(""); setCandidateSearch(""); setVPage(1); }}
+                                className="text-[10px] text-slate-500 hover:text-primary font-mono transition-colors flex items-center gap-1"
+                            >
+                                <span className="material-symbols-outlined text-[12px]">close</span>
+                                Clear
+                            </button>
+                        )}
+                    </div>
                 </div>
 
                 {/* Table */}
@@ -270,18 +450,36 @@ export default function ReportsPage() {
                 ) : violations.length === 0 ? (
                     <div className="py-16 text-center text-slate-600">
                         <span className="material-symbols-outlined text-4xl block mb-3">verified_user</span>
-                        <p className="text-sm">No violations found{typeFilter ? " for this type" : ""}.</p>
+                        <p className="text-sm">No violations found.</p>
                     </div>
                 ) : (
                     <div className="overflow-x-auto">
                         <table className="w-full text-left text-sm">
                             <thead>
-                                <tr className="text-slate-500 border-b border-[#3b3b3b] font-mono uppercase text-[10px]">
-                                    <th className="px-6 py-3">Candidate</th>
-                                    <th className="px-6 py-3">Violation Type</th>
-                                    <th className="px-6 py-3 text-center">Severity</th>
-                                    <th className="px-6 py-3">Timestamp</th>
-                                    <th className="px-6 py-3 text-right">Action</th>
+                                <tr className="border-b border-[#3b3b3b] font-mono uppercase text-[10px]">
+                                    {([
+                                        { label: "Candidate", field: null },
+                                        { label: "Violation Type", field: "type" as SortField },
+                                        { label: "Severity", field: "severity" as SortField },
+                                        { label: "Timestamp", field: "timestamp" as SortField },
+                                        { label: "Action", field: null },
+                                    ] as { label: string; field: SortField | null }[]).map(col => (
+                                        <th
+                                            key={col.label}
+                                            className={`px-6 py-3 text-slate-500 ${col.field ? "cursor-pointer hover:text-white group select-none" : ""} ${col.label === "Severity" || col.label === "Action" ? "text-center" : ""}`}
+                                            onClick={() => col.field && handleSort(col.field)}
+                                        >
+                                            <span className="flex items-center gap-1">
+                                                {col.label}
+                                                {col.field && (
+                                                    <SortIcon
+                                                        active={sortField === col.field}
+                                                        order={sortOrder}
+                                                    />
+                                                )}
+                                            </span>
+                                        </th>
+                                    ))}
                                 </tr>
                             </thead>
                             <tbody className="divide-y divide-[#3b3b3b]/30">
@@ -302,19 +500,18 @@ export default function ReportsPage() {
                                             </div>
                                         </td>
                                         <td className="px-6 py-3.5">
-                                            <span className="text-slate-300 font-mono text-[11px] uppercase">
+                                            <button
+                                                onClick={() => handleTypeChange(typeFilter === v.type ? "" : v.type)}
+                                                className={`text-slate-300 font-mono text-[11px] uppercase hover:text-primary transition-colors ${typeFilter === v.type ? "text-primary" : ""}`}
+                                            >
                                                 {v.type.replace(/_/g, " ")}
-                                            </span>
+                                            </button>
                                         </td>
                                         <td className="px-6 py-3.5 text-center">
                                             {v.severity === "critical" ? (
-                                                <span className="px-2 py-0.5 rounded bg-[#e64d4d]/10 text-[#e64d4d] text-[10px] font-bold border border-[#e64d4d]/20 uppercase">
-                                                    Critical
-                                                </span>
+                                                <span className="px-2 py-0.5 rounded bg-[#e64d4d]/10 text-[#e64d4d] text-[10px] font-bold border border-[#e64d4d]/20 uppercase">Critical</span>
                                             ) : (
-                                                <span className="px-2 py-0.5 rounded bg-amber-500/10 text-amber-500 text-[10px] font-bold border border-amber-500/20 uppercase">
-                                                    Moderate
-                                                </span>
+                                                <span className="px-2 py-0.5 rounded bg-amber-500/10 text-amber-500 text-[10px] font-bold border border-amber-500/20 uppercase">Moderate</span>
                                             )}
                                         </td>
                                         <td className="px-6 py-3.5 font-mono text-xs text-slate-500">{v.timestamp}</td>
@@ -324,7 +521,7 @@ export default function ReportsPage() {
                                                 className="text-primary hover:underline text-xs disabled:opacity-30"
                                                 disabled={!v.sessionId}
                                             >
-                                                Review Session →
+                                                Review →
                                             </button>
                                         </td>
                                     </tr>
@@ -334,7 +531,7 @@ export default function ReportsPage() {
                     </div>
                 )}
 
-                {/* Pagination footer */}
+                {/* Pagination */}
                 {vTotalPages > 1 && (
                     <div className="px-6 py-4 border-t border-[#3b3b3b] flex items-center justify-between">
                         <p className="text-xs text-slate-500 font-mono">
@@ -349,20 +546,13 @@ export default function ReportsPage() {
                                 <span className="material-symbols-outlined text-sm">chevron_left</span>
                                 Prev
                             </button>
-
-                            {/* Page number pills */}
                             <div className="flex items-center gap-1">
                                 {Array.from({ length: Math.min(5, vTotalPages) }, (_, i) => {
                                     let pageNum: number;
-                                    if (vTotalPages <= 5) {
-                                        pageNum = i + 1;
-                                    } else if (vPage <= 3) {
-                                        pageNum = i + 1;
-                                    } else if (vPage >= vTotalPages - 2) {
-                                        pageNum = vTotalPages - 4 + i;
-                                    } else {
-                                        pageNum = vPage - 2 + i;
-                                    }
+                                    if (vTotalPages <= 5) pageNum = i + 1;
+                                    else if (vPage <= 3) pageNum = i + 1;
+                                    else if (vPage >= vTotalPages - 2) pageNum = vTotalPages - 4 + i;
+                                    else pageNum = vPage - 2 + i;
                                     return (
                                         <button
                                             key={pageNum}
@@ -378,7 +568,6 @@ export default function ReportsPage() {
                                     );
                                 })}
                             </div>
-
                             <button
                                 onClick={() => setVPage(p => Math.min(vTotalPages, p + 1))}
                                 disabled={vPage === vTotalPages}

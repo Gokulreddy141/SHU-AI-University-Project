@@ -1,0 +1,30 @@
+Type,Text,Points,Options,CorrectIndex,Languages,StarterCode,ExpectedOutput
+MCQ,What is the difference between supervised and unsupervised learning?,3,Supervised uses GPUs while unsupervised does not;Supervised learning trains on labelled data while unsupervised learning finds patterns in unlabelled data,1,,,
+MCQ,What does the bias-variance tradeoff describe?,3,The tradeoff between model accuracy and speed;High bias leads to underfitting while high variance leads to overfitting — good models balance both,1,,,
+MCQ,What is gradient descent?,3,A search algorithm for graphs;An optimisation algorithm that iteratively adjusts model parameters in the direction of the negative gradient of the loss function,1,,,
+MCQ,What is the purpose of a sigmoid activation function?,2,To introduce sparsity;To squash any input into a 0 to 1 range making it suitable for binary classification output layers,1,,,
+MCQ,What does regularisation do in machine learning?,3,Increases model complexity;Adds a penalty to the loss function to reduce model complexity and prevent overfitting — L1 (Lasso) and L2 (Ridge) are common forms,1,,,
+MCQ,What is a confusion matrix?,3,A matrix used in neural network layers;A table showing true positives false positives true negatives and false negatives to evaluate classification model performance,1,,,
+MCQ,What is the purpose of a learning rate in training neural networks?,3,The size of the dataset batch;Controls how large a step the optimiser takes when updating model weights — too high causes divergence too low causes slow convergence,1,,,
+MCQ,What does Principal Component Analysis (PCA) do?,3,Classifies data points;Reduces dimensionality by projecting data onto orthogonal axes (principal components) that capture the most variance,1,,,
+MCQ,What is a decision tree in machine learning?,2,A tree data structure for sorting;A model that splits data into subsets based on feature values at each node building a tree of decisions to predict an output,1,,,
+MCQ,What is the F1 score?,3,The accuracy of a model;The harmonic mean of precision and recall balancing both metrics — useful when class distribution is imbalanced,1,,,
+MCQ,What is the role of the softmax function in multi-class classification?,3,To normalise inputs before training;To convert raw logits into a probability distribution over all classes where outputs sum to 1,1,,,
+MCQ,What is transfer learning?,3,Moving a model between servers;Using a pre-trained model on a large dataset and fine-tuning it on a smaller domain-specific dataset,1,,,
+CODING,Write a Python function called 'normalize' that takes a list of numbers and returns a new list where each value is normalised to the range [0 1] using min-max normalisation.,5,,,python,"def normalize(data):
+    # write your solution here
+    pass","[0.0, 0.25, 0.5, 0.75, 1.0]"
+CODING,Write a Python function called 'train_test_split_manual' that takes a list X and a float ratio (e.g. 0.8) and returns (X_train X_test) split at that ratio without shuffling.,5,,,python,"def train_test_split_manual(X, ratio):
+    # write your solution here
+    pass","([1, 2, 3, 4], [5])"
+CODING,Write a Python class called 'KNNClassifier' with fit(X_train y_train) and predict(X_test k) methods. Implement k-nearest neighbours using Euclidean distance. predict returns a list of predicted labels.,10,,,python,"import math
+from collections import Counter
+
+class KNNClassifier:
+    def fit(self, X_train, y_train):
+        # write your solution here
+        pass
+
+    def predict(self, X_test, k=3):
+        # write your solution here
+        pass","['B', 'A']"

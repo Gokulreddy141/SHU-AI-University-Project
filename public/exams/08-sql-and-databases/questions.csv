@@ -1,0 +1,32 @@
+Type,Text,Points,Options,CorrectIndex,Languages,StarterCode,ExpectedOutput
+MCQ,Which SQL clause is used to filter rows after aggregation?,2,WHERE;HAVING;FILTER;GROUP BY,1,,,
+MCQ,What is the difference between INNER JOIN and LEFT JOIN?,3,INNER JOIN returns all rows from both tables;INNER JOIN returns only matching rows while LEFT JOIN returns all rows from the left table and matched rows from the right;LEFT JOIN is faster than INNER JOIN;They are identical,1,,,
+MCQ,What does the SQL command EXPLAIN do?,3,Deletes a table;Shows the query execution plan chosen by the database optimizer;Creates an index;Explains table schema,1,,,
+MCQ,What is a database index and what trade-off does it involve?,3,It is a backup;An index speeds up reads but slows writes and uses extra storage;It only affects write performance;An index is required for all tables,1,,,
+MCQ,What does ACID stand for in database transactions?,2,Availability Consistency Integrity Durability;Atomicity Consistency Isolation Durability;Atomicity Caching Isolation Distribution;Availability Caching Integrity Durability,1,,,
+MCQ,What is a foreign key constraint?,3,A primary key in another form;A constraint that ensures a column value in one table matches a primary key in another table maintaining referential integrity;A unique key across multiple columns;A key used only in NoSQL databases,1,,,
+MCQ,What is the difference between DELETE and TRUNCATE in SQL?,3,They are identical;DELETE removes specific rows one-by-one and is logged while TRUNCATE removes all rows instantly and cannot be rolled back in some databases;TRUNCATE is slower;DELETE cannot use WHERE clauses,1,,,
+MCQ,What does the SQL COALESCE function do?,2,Concatenates strings;Returns the first non-NULL value from a list of expressions;Counts non-null values;Converts NULL to 0,1,,,
+MCQ,What is a database view?,3,A copy of a table;A stored virtual table defined by a query that can be queried like a regular table;A cached query result;A materialized backup,1,,,
+MCQ,What is a composite index?,2,An index on a JSON column;An index on multiple columns used to optimise queries that filter or sort by those columns together;An index with compression;A full-text search index,1,,,
+MCQ,What does the N+1 query problem mean?,3,A single query with N joins;Fetching N records with one query then issuing N additional queries to fetch related data causing performance issues;A query with N results;Running a query N+1 times in a transaction,1,,,
+MCQ,What is the purpose of database normalisation?,3,To speed up all queries;To organise data to reduce redundancy and ensure data integrity by decomposing tables into smaller related tables;To encrypt database fields;To add indexes automatically,1,,,
+CODING,Write a SQL query that returns the top 3 departments by average salary. The employees table has columns: id name department salary. Return department and avg_salary rounded to 2 decimal places ordered descending.,8,,,sql,"-- Write your SQL query below
+-- Table: employees (id, name, department, salary)
+
+","department,avg_salary
+Engineering,95000.00
+Product,85000.00
+Marketing,75000.00"
+CODING,Write a SQL query to find all customers who have placed more than 5 orders. Tables: customers (id name email) and orders (id customer_id amount created_at). Return customer name and order_count ordered by order_count descending.,8,,,sql,"-- Write your SQL query below
+-- Tables: customers (id, name, email), orders (id, customer_id, amount, created_at)
+
+","name,order_count
+Alice,12
+Bob,8"
+CODING,Write a SQL query to find duplicate email addresses in a users table (columns: id email name). Return the email and the number of times it appears only if it appears more than once.,8,,,sql,"-- Write your SQL query below
+-- Table: users (id, email, name)
+
+","email,count
+test@example.com,3
+dup@test.com,2"

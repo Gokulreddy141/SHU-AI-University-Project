@@ -1,5 +1,6 @@
 "use client";
 import { useEffect, useRef, useCallback } from "react";
+import type { SharedMic } from "./useSharedMic";
 
 const BASELINE_DURATION_MS = 15000; // 15s to build voice baseline
 const CHECK_INTERVAL_MS = 30000;    // Check every 30 seconds
@@ -18,17 +19,14 @@ const COOLDOWN_MS = 60000;
  * Every 30s, compares the current voice against the baseline using cosine
  * similarity. A significant drop = different speaker is present.
  *
- * Detects:
- * - Someone else answering on behalf of the candidate
- * - Candidate swapped out mid-exam
- * - Pre-recorded voice playback with different vocal characteristics
- *
- * Accuracy: ~82% identification rate at 0.78 threshold with 15s baseline.
+ * Accepts an optional SharedMic — when provided, skips getUserMedia and
+ * attaches its own AnalyserNode to the shared source.
  */
 export function useSpeakerIdentity(
     sessionId: string,
     candidateId: string,
-    enabled: boolean
+    enabled: boolean,
+    sharedMic?: SharedMic | null
 ) {
     const baselineRef = useRef<number[] | null>(null);
     const baselineFrames = useRef<number[][]>([]);
@@ -77,11 +75,9 @@ export function useSpeakerIdentity(
             const nyquist = sampleRate / 2;
             const binCount = freqData.length;
 
-            // Check if there is enough energy (voice frame, not silence)
             const avgDb = freqData.reduce((sum, v) => sum + v, 0) / freqData.length;
             if (avgDb < MIN_ENERGY_DB) return null;
 
-            // Mel filterbank: MFCC_BINS triangular filters from 0 to nyquist Hz
             const melMin = 2595 * Math.log10(1 + 0 / 700);
             const melMax = 2595 * Math.log10(1 + nyquist / 700);
             const melPoints = Array.from({ length: MFCC_BINS + 2 }, (_, i) =>
@@ -120,70 +116,86 @@ export function useSpeakerIdentity(
         let mounted = true;
 
         const start = async () => {
-            try {
-                const stream = await navigator.mediaDevices.getUserMedia({
-                    audio: { sampleRate: 16000, channelCount: 1 },
-                    video: false,
-                });
-                if (!mounted) { stream.getTracks().forEach(t => t.stop()); return; }
+            let analyser: AnalyserNode;
+            let sampleRate = 16000;
 
-                streamRef.current = stream;
-                const ctx = new AudioContext({ sampleRate: 16000 });
-                audioContextRef.current = ctx;
-
-                const analyser = ctx.createAnalyser();
+            if (sharedMic?.isReady && sharedMic.audioContext && sharedMic.sourceNode) {
+                sampleRate = sharedMic.audioContext.sampleRate;
+                analyser = sharedMic.audioContext.createAnalyser();
                 analyser.fftSize = 2048;
                 analyser.smoothingTimeConstant = 0;
+                sharedMic.sourceNode.connect(analyser);
                 analyserRef.current = analyser;
+            } else {
+                try {
+                    const stream = await navigator.mediaDevices.getUserMedia({
+                        audio: { sampleRate: 16000, channelCount: 1 },
+                        video: false,
+                    });
+                    if (!mounted) { stream.getTracks().forEach(t => t.stop()); return; }
 
-                const source = ctx.createMediaStreamSource(stream);
-                source.connect(analyser);
+                    streamRef.current = stream;
+                    const ctx = new AudioContext({ sampleRate: 16000 });
+                    audioContextRef.current = ctx;
+                    sampleRate = ctx.sampleRate;
 
-                const freqData = new Float32Array(analyser.frequencyBinCount);
+                    analyser = ctx.createAnalyser();
+                    analyser.fftSize = 2048;
+                    analyser.smoothingTimeConstant = 0;
+                    analyserRef.current = analyser;
 
-                buildStart.current = Date.now();
+                    const source = ctx.createMediaStreamSource(stream);
+                    source.connect(analyser);
+                } catch {
+                    return; // Mic unavailable
+                }
+            }
 
-                const analyze = () => {
-                    if (!mounted) return;
-                    analyser.getFloatFrequencyData(freqData);
+            if (!mounted) {
+                analyser.disconnect();
+                return;
+            }
 
-                    const features = extractFeatures(freqData, ctx.sampleRate);
+            const freqData = new Float32Array(analyser.frequencyBinCount);
+            buildStart.current = Date.now();
 
-                    if (features) {
-                        const now = Date.now();
+            const analyze = () => {
+                if (!mounted) return;
+                analyser.getFloatFrequencyData(freqData);
 
-                        // Phase 1: Build baseline
-                        if (isBuilding.current) {
-                            if (now - buildStart.current < BASELINE_DURATION_MS) {
-                                baselineFrames.current.push(features);
-                            } else if (baselineFrames.current.length >= 5) {
-                                // Average all collected frames
-                                const avg = features.map((_, i) =>
-                                    baselineFrames.current.reduce((sum, f) => sum + f[i], 0) / baselineFrames.current.length
-                                );
-                                baselineRef.current = avg;
-                                isBuilding.current = false;
-                                lastCheckTime.current = now;
-                            }
-                        }
+                const features = extractFeatures(freqData, sampleRate);
 
-                        // Phase 2: Periodic comparison
-                        if (!isBuilding.current && baselineRef.current && now - lastCheckTime.current >= CHECK_INTERVAL_MS) {
+                if (features) {
+                    const now = Date.now();
+
+                    // Phase 1: Build baseline
+                    if (isBuilding.current) {
+                        if (now - buildStart.current < BASELINE_DURATION_MS) {
+                            baselineFrames.current.push(features);
+                        } else if (baselineFrames.current.length >= 5) {
+                            const avg = features.map((_, i) =>
+                                baselineFrames.current.reduce((sum, f) => sum + f[i], 0) / baselineFrames.current.length
+                            );
+                            baselineRef.current = avg;
+                            isBuilding.current = false;
                             lastCheckTime.current = now;
-                            const sim = cosineSimilarity(baselineRef.current, features);
-                            if (sim < SIMILARITY_THRESHOLD) {
-                                logViolation(sim);
-                            }
                         }
                     }
 
-                    animFrameRef.current = requestAnimationFrame(analyze);
-                };
+                    // Phase 2: Periodic comparison
+                    if (!isBuilding.current && baselineRef.current && now - lastCheckTime.current >= CHECK_INTERVAL_MS) {
+                        lastCheckTime.current = now;
+                        const sim = cosineSimilarity(baselineRef.current, features);
+                        if (sim < SIMILARITY_THRESHOLD) {
+                            logViolation(sim);
+                        }
+                    }
+                }
 
                 animFrameRef.current = requestAnimationFrame(analyze);
-            } catch {
-                // Mic unavailable
-            }
+            };
+
+            animFrameRef.current = requestAnimationFrame(analyze);
         };
 
         start();
@@ -191,8 +203,15 @@ export function useSpeakerIdentity(
         return () => {
             mounted = false;
             if (animFrameRef.current) cancelAnimationFrame(animFrameRef.current);
-            streamRef.current?.getTracks().forEach(t => t.stop());
-            audioContextRef.current?.close().catch(() => {});
+            analyserRef.current?.disconnect();
+            analyserRef.current = null;
+            if (!sharedMic) {
+                streamRef.current?.getTracks().forEach(t => t.stop());
+                audioContextRef.current?.close().catch(() => {});
+                streamRef.current = null;
+                audioContextRef.current = null;
+            }
         };
-    }, [enabled, extractFeatures, cosineSimilarity, logViolation]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [enabled, extractFeatures, cosineSimilarity, logViolation, sharedMic?.isReady]);
 }
