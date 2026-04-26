@@ -21,10 +21,17 @@ async function connectToDatabase() {
   if (!cached!.promise) {
     const opts = {
       bufferCommands: false,
+      serverSelectionTimeoutMS: 5000,   // fail fast if Atlas is unreachable
+      connectTimeoutMS: 10000,           // max time to establish a connection
+      socketTimeoutMS: 45000,            // max time for a socket operation
     };
 
     cached!.promise = mongoose.connect(MONGODB_URI!, opts).then((mongoose) => {
       return mongoose;
+    }).catch((err) => {
+      // Reset cached promise so the next request retries instead of hanging on a dead promise
+      cached!.promise = null;
+      throw err;
     });
   }
   cached!.conn = await cached!.promise;
