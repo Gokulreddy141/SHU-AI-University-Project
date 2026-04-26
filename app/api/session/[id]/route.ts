@@ -100,8 +100,9 @@ export async function PATCH(
         // End exam — compute final integrity score + auto-flag
         if (body.status === "completed" || body.status === "flagged") {
             session.endTime = new Date();
-            // Convert Mongoose subdoc to plain object for the scoring engine
-            const summary = session.violationSummary.toObject();
+            // Convert Mongoose subdoc to plain object for the scoring engine.
+            // Guard against missing subdoc (e.g. legacy sessions without defaults).
+            const summary = session.violationSummary?.toObject?.() ?? {};
             session.integrityScore = calculateIntegrityScore(summary);
 
             // Auto-grade technical test if completed
@@ -176,10 +177,33 @@ export async function PATCH(
                     session.status = "flagged";
                 }
 
-                // Generate post-session AI report via Gemini (non-blocking — best effort)
+            }
+        }
+
+        // Save session immediately — status, score and grading are committed now.
+        // The AI report is generated afterwards in a fire-and-forget task so that
+        // a slow or failing Gemini call never blocks the PATCH from returning.
+        await session.save();
+
+        // Generate post-session AI report via Gemini (truly non-blocking)
+        if (body.status === "completed") {
+            const sessionId = id;
+            const capturedExamTitle = (await (await import("@/models/Exam")).default
+                .findById(session.examId)
+                .select("title")
+                .lean() as { title?: string } | null)?.title ?? "Technical Exam";
+            const capturedViolationSummary = session.violationSummary.toObject();
+            const capturedAttentionData = session.attentionData;
+            const capturedIntegrityScore = session.integrityScore;
+            const capturedExamScore = session.examScore;
+            const capturedMaxScore = session.maxScore;
+            const capturedDuration = session.startTime && session.endTime
+                ? Math.round((session.endTime.getTime() - session.startTime.getTime()) / 60000)
+                : null;
+
+            (async () => {
                 try {
-                    const violationSummary = session.violationSummary.toObject();
-                    const topViolations = Object.entries(violationSummary)
+                    const topViolations = Object.entries(capturedViolationSummary)
                         .filter(([, v]) => (v as number) > 0)
                         .sort(([, a], [, b]) => (b as number) - (a as number))
                         .slice(0, 6)
@@ -187,21 +211,21 @@ export async function PATCH(
                         .join(", ");
 
                     const avgAttention =
-                        session.attentionData && session.attentionData.length > 0
+                        capturedAttentionData && capturedAttentionData.length > 0
                             ? Math.round(
-                                  session.attentionData.reduce(
+                                  capturedAttentionData.reduce(
                                       (s: number, d: { attentionScore: number }) => s + d.attentionScore,
                                       0
-                                  ) / session.attentionData.length
+                                  ) / capturedAttentionData.length
                               )
                             : null;
 
                     const prompt = `You are an AI exam integrity analyst. Analyse this candidate exam session and provide a concise integrity report.
 
-Exam: ${(exam as LeanExam & { title?: string })?.title ?? "Technical Exam"}
-Duration: ${session.startTime && session.endTime ? Math.round((session.endTime.getTime() - session.startTime.getTime()) / 60000) : "unknown"} minutes
-Integrity score: ${session.integrityScore}/100
-Exam score: ${earnedScore}/${maxScore}
+Exam: ${capturedExamTitle}
+Duration: ${capturedDuration !== null ? `${capturedDuration} minutes` : "unknown"}
+Integrity score: ${capturedIntegrityScore}/100
+Exam score: ${capturedExamScore}/${capturedMaxScore}
 Violations detected: ${topViolations || "none"}
 Average attention score: ${avgAttention !== null ? `${avgAttention}/100` : "not available"}
 
@@ -213,7 +237,6 @@ Respond with a JSON object (no markdown fences) with exactly these keys:
 Only output the JSON object.`;
 
                     const raw = await generateWithGemini(prompt);
-                    // Strip any accidental markdown fences
                     const clean = raw.replace(/```json|```/g, "").trim();
                     const parsed = JSON.parse(clean) as {
                         summary: string;
@@ -221,19 +244,19 @@ Only output the JSON object.`;
                         flags: string[];
                     };
 
-                    session.aiReport = {
-                        summary: parsed.summary ?? null,
-                        riskLevel: parsed.riskLevel ?? null,
-                        flags: Array.isArray(parsed.flags) ? parsed.flags : [],
-                        generatedAt: new Date(),
-                    };
+                    await ExamSession.findByIdAndUpdate(sessionId, {
+                        aiReport: {
+                            summary: parsed.summary ?? null,
+                            riskLevel: parsed.riskLevel ?? null,
+                            flags: Array.isArray(parsed.flags) ? parsed.flags : [],
+                            generatedAt: new Date(),
+                        },
+                    });
                 } catch {
-                    // Gemini unavailable — skip report, do not fail the request
+                    // Gemini unavailable — skip report silently
                 }
-            }
+            })();
         }
-
-        await session.save();
 
         return NextResponse.json({
             message: "Session updated",

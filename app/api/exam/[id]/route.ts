@@ -1,7 +1,9 @@
 import { NextResponse } from "next/server";
 import connectToDatabase from "@/lib/db";
 import Exam from "@/models/Exam";
-import { handleApiError } from "@/lib/apiUtils";
+import Question from "@/models/Question";
+import ExamSession from "@/models/ExamSession";
+import { handleApiError, getAuth } from "@/lib/apiUtils";
 
 // GET /api/exam/[id] — Get exam details
 export async function GET(
@@ -74,6 +76,53 @@ export async function PATCH(
         }
 
         return NextResponse.json({ message: "Exam updated", exam });
+    } catch (error: unknown) {
+        return handleApiError(error);
+    }
+}
+
+// DELETE /api/exam/[id] — Permanently delete an exam and its questions
+export async function DELETE(
+    req: Request,
+    { params }: { params: Promise<{ id: string }> }
+) {
+    try {
+        await connectToDatabase();
+        const { id } = await params;
+        const auth = getAuth(req);
+
+        if (!auth || auth.role !== "recruiter") {
+            return NextResponse.json({ message: "Unauthorized" }, { status: 401 });
+        }
+
+        const exam = await Exam.findById(id).select("recruiterId title").lean();
+        if (!exam) {
+            return NextResponse.json({ message: "Exam not found" }, { status: 404 });
+        }
+
+        // Only the owning recruiter may delete
+        if (exam.recruiterId.toString() !== auth.userId) {
+            return NextResponse.json({ message: "Forbidden" }, { status: 403 });
+        }
+
+        // Block deletion if any session is currently in progress
+        const activeSession = await ExamSession.findOne({
+            examId: id,
+            status: "in_progress",
+        }).select("_id").lean();
+
+        if (activeSession) {
+            return NextResponse.json(
+                { message: "Cannot delete — one or more candidates are currently sitting this exam." },
+                { status: 409 }
+            );
+        }
+
+        // Delete questions then the exam itself
+        await Question.deleteMany({ examId: id });
+        await Exam.findByIdAndDelete(id);
+
+        return NextResponse.json({ message: "Exam deleted" }, { status: 200 });
     } catch (error: unknown) {
         return handleApiError(error);
     }
