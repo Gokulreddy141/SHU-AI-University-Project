@@ -9,12 +9,15 @@ interface VirtualDeviceState {
 const CHECK_INTERVAL_MS = 30000; // Check every 30 seconds
 const COOLDOWN_MS = 300000; // 5 minutes between violations (to avoid spamming, as this is static hardware)
 
-// Known keywords often found in virtual camera/audio drivers
+// Known keywords often found in virtual camera/audio drivers.
+// "virtual" removed: it matches too many legitimate device names —
+// "VirtualBox Guest Additions Audio" on a normal Windows PC, "Virtual Audio Cable"
+// bundled with some audio interfaces, and iOS "Virtual Microphone" on wired phones.
+// Use the more specific application names instead.
 const VIRTUAL_KEYWORDS = [
     "obs",
     "manycam",
     "snap camera",
-    "virtual",
     "epoccam",
     "iriun",
     "xsplit",
@@ -54,7 +57,10 @@ export function useVirtualDeviceDetection(
                         candidateId,
                         type: "VIRTUAL_DEVICE_DETECTED",
                         timestamp: new Date().toISOString(),
-                        confidence: 0.95,
+                        // Lowered from 0.95 → 0.75: some of these apps (OBS, VB-Audio)
+                        // are installed on developer machines for unrelated purposes (streaming,
+                        // podcasting) and are just enumerated as devices even when inactive.
+                        confidence: 0.75,
                         direction: devices.join(", ").substring(0, 100),
                     }),
                 });

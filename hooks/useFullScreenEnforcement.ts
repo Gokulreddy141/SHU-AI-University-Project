@@ -6,7 +6,10 @@ interface FullScreenState {
     violationCount: number;
 }
 
-const FULLSCREEN_COOLDOWN_MS = 30000;
+const FULLSCREEN_COOLDOWN_MS = 60000; // Raised from 30s — OS dialogs can trigger exit/re-enter rapidly
+// Grace period: if fullscreen is restored within this window, don't flag.
+// Covers accidental ESC press, OS notification steal, and permission dialogs.
+const FULLSCREEN_RESTORE_GRACE_MS = 5000;
 
 export function useFullScreenEnforcement(
     sessionId: string,
@@ -18,6 +21,7 @@ export function useFullScreenEnforcement(
         violationCount: 0,
     });
     const lastViolationTime = useRef<number>(0);
+    const exitTime = useRef<number | null>(null);
 
     const logViolation = useCallback(async () => {
         try {
@@ -65,13 +69,21 @@ export function useFullScreenEnforcement(
 
             if (isFull) {
                 hasBeenFullscreen = true;
+                // If restored within grace period, cancel the pending violation
+                exitTime.current = null;
             } else if (hasBeenFullscreen) {
-                // Only flag as violation if the candidate actually left fullscreen
-                const now = Date.now();
-                if (now - lastViolationTime.current > FULLSCREEN_COOLDOWN_MS) {
-                    logViolation();
-                    lastViolationTime.current = now;
-                }
+                exitTime.current = Date.now();
+                // Delay the violation log — if fullscreen is restored quickly
+                // (OS dialog dismissed, accidental ESC) we skip it entirely.
+                const capturedExit = exitTime.current;
+                setTimeout(() => {
+                    if (exitTime.current !== capturedExit) return; // restored — cancel
+                    const now = Date.now();
+                    if (now - lastViolationTime.current > FULLSCREEN_COOLDOWN_MS) {
+                        logViolation();
+                        lastViolationTime.current = now;
+                    }
+                }, FULLSCREEN_RESTORE_GRACE_MS);
             }
         };
 

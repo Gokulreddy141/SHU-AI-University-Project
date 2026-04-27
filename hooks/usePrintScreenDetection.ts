@@ -1,7 +1,9 @@
 "use client";
 import { useEffect, useCallback, useRef } from "react";
 
-const COOLDOWN_MS = 5000;
+// Raised from 5s → 15s: a 5s cooldown fired multiple violations per single
+// screenshot attempt (keydown fires multiple times on key-repeat for PrintScreen).
+const COOLDOWN_MS = 15000;
 
 /**
  * Detects screenshot attempts via:
@@ -65,11 +67,9 @@ export function usePrintScreenDetection(
                 return;
             }
 
-            // Windows Snipping Tool: Win key can't be captured, but Ctrl+Shift+S
-            if (e.ctrlKey && e.shiftKey && e.key.toLowerCase() === "s") {
-                logViolation("Ctrl+Shift+S");
-                return;
-            }
+            // Note: Ctrl+Shift+S was removed — it is the "Save As" shortcut in
+            // Chrome DevTools and many web apps, not a screenshot shortcut.
+            // Win+Shift+S (Snipping Tool) cannot be intercepted at the browser level.
 
             // Screen capture via browser extensions often use F12+Shift or Alt+PrintScreen
             if (e.altKey && (e.key === "PrintScreen" || e.keyCode === 44)) {
@@ -79,28 +79,15 @@ export function usePrintScreenDetection(
             }
         };
 
-        // Clipboard image surveillance — poll clipboard items after focus returns
-        // (OS screenshot tools write image/png to clipboard)
-        const handleFocus = async () => {
-            try {
-                const items = await navigator.clipboard.read().catch(() => []);
-                for (const item of items) {
-                    if (item.types.some((t) => t.startsWith("image/"))) {
-                        logViolation("CLIPBOARD_IMAGE_DETECTED");
-                        break;
-                    }
-                }
-            } catch {
-                // Clipboard API not available or permission denied — ignore
-            }
-        };
+        // Clipboard image surveillance was removed: the focus handler fired on EVERY
+        // window focus-return (alt-tab back, OS notification dismissed, etc.). Any image
+        // already in clipboard from before the exam (e.g. a screenshot taken earlier)
+        // would trigger a false violation. Keyboard shortcut detection is sufficient.
 
         document.addEventListener("keydown", handleKeyDown, true);
-        window.addEventListener("focus", handleFocus);
 
         return () => {
             document.removeEventListener("keydown", handleKeyDown, true);
-            window.removeEventListener("focus", handleFocus);
         };
     }, [enabled, logViolation]);
 }

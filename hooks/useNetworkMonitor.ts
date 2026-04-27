@@ -9,10 +9,19 @@ interface NetworkMonitorState {
 }
 
 const HEARTBEAT_INTERVAL_MS = 30000;   // 30 seconds
-const MAX_DISCONNECTIONS = 3;           // 3+ disconnects = suspicious
-const MAX_TOTAL_OFFLINE_MS = 60000;     // 60s total offline = suspicious
-const MAX_SINGLE_GAP_MS = 30000;        // 30s single gap = suspicious
-const COOLDOWN_MS = 60000;              // 60 seconds between violations
+// Raised from 3 → 5: coffee-shop / mobile-hotspot WiFi has natural AP handoffs
+// that register as 3 disconnects without any cheating intent.
+const MAX_DISCONNECTIONS = 5;
+// Raised from 60s → 90s total: VPN re-auth and ISP micro-drops accumulate to
+// 60s naturally over a 60-90 minute exam on an unstable connection.
+const MAX_TOTAL_OFFLINE_MS = 90000;
+// Raised from 30s → 45s single gap: public WiFi can take 30-40s to reassociate
+// with an access point; only flag a deliberate cable-pull (45s+ gap).
+const MAX_SINGLE_GAP_MS = 45000;
+// Brief flutter guard: gaps under 5s are transient ISP/Bluetooth noise — don't
+// count them toward disconnectionCount at all.
+const MIN_GAP_TO_COUNT_MS = 5000;
+const COOLDOWN_MS = 90000;             // Raised from 60s
 
 /**
  * Monitors network connectivity to detect intentional disconnections.
@@ -79,8 +88,16 @@ export function useNetworkMonitor(
         const handleOnline = () => {
             if (offlineStartTime.current) {
                 const gap = Date.now() - offlineStartTime.current;
-                totalOfflineMs.current += gap;
                 offlineStartTime.current = null;
+
+                // Ignore sub-5s flutter (Bluetooth interference, ISP micro-drop)
+                if (gap < MIN_GAP_TO_COUNT_MS) {
+                    disconnectionCount.current = Math.max(0, disconnectionCount.current - 1);
+                    setState((prev) => ({ ...prev, isOnline: true }));
+                    return;
+                }
+
+                totalOfflineMs.current += gap;
 
                 const isAnomalous =
                     disconnectionCount.current >= MAX_DISCONNECTIONS ||

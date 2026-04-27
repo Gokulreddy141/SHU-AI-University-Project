@@ -93,10 +93,13 @@ export function useMultiTabDetection(
 
         window.addEventListener("storage", handleStorage);
 
-        // Heartbeat: re-write our tab ID periodically so new tabs detect us
+        // Heartbeat: re-write our tab ID periodically so new tabs detect us.
+        // Raised from 3000ms → 5000ms: the storage event fires synchronously for
+        // cross-tab writes, so 3000ms was causing spurious self-detection races on
+        // slow storage flushes. 5s is still fast enough for reliable detection.
         const heartbeat = setInterval(() => {
             localStorage.setItem(storageKey, tabId.current);
-        }, 3000);
+        }, 5000);
 
         return () => {
             window.removeEventListener("storage", handleStorage);
