@@ -101,12 +101,30 @@ export function useClipboardInterception(
             await logViolation(preview, confidence);
         };
 
+        // Intercept programmatic clipboard reads (e.g. AI browser extensions that
+        // call navigator.clipboard.readText() without triggering a paste event)
+        const originalReadText = navigator.clipboard.readText.bind(navigator.clipboard);
+        navigator.clipboard.readText = async () => {
+            const text = await originalReadText();
+            if (text.length > 0) {
+                const timeSinceLastKeystroke = Date.now() - lastKeystrokeTime.current;
+                const noRecentTyping = lastKeystrokeTime.current === 0 || timeSinceLastKeystroke > 8000;
+                const confidence = (text.length >= LARGE_PASTE_THRESHOLD && noRecentTyping) ? 0.90
+                    : text.length >= LARGE_PASTE_THRESHOLD ? 0.75
+                    : noRecentTyping ? 0.65 : 0.55;
+                const preview = `PROG_READ LEN:${text.length} ${text.slice(0, 80).replace(/\n/g, " ")}`;
+                logViolation(preview, confidence);
+            }
+            return text;
+        };
+
         document.addEventListener("keydown", handleKeyDown, true);
         document.addEventListener("paste", handlePaste, true);
 
         return () => {
             document.removeEventListener("keydown", handleKeyDown, true);
             document.removeEventListener("paste", handlePaste, true);
+            navigator.clipboard.readText = originalReadText;
         };
     }, [enabled, logViolation]);
 }
