@@ -24,10 +24,14 @@ interface FaceLandmark { x: number; y: number; z: number; }
  * Accuracy: ~75% at reducing false positives vs simple gaze-down detection.
  */
 
-const HEAD_DOWN_THRESHOLD = 0.18;     // Normalized pitch ratio — head tilted down
-const IRIS_DOWN_THRESHOLD = 0.62;     // Iris Y > 62% of eye height = looking down
-const SUSPECT_DURATION_MS = 1500;     // Must persist 1.5s before escalating
-const CONFIRM_FRAMES = 3;             // 3 consecutive "down" frames to confirm
+const HEAD_DOWN_THRESHOLD = 0.18;
+// Raised from 0.62 → 0.72: reading text at the bottom of the monitor or
+// glancing at the keyboard naturally puts iris at 0.63-0.68. Only flag
+// when eyes are genuinely pointing at floor-level (phone below desk).
+const IRIS_DOWN_THRESHOLD = 0.72;
+// Raised from 1.5s → 3s: a quick keyboard glance lasts ~1-2s legitimately.
+const SUSPECT_DURATION_MS = 3000;
+const CONFIRM_FRAMES = 3;
 const COOLDOWN_MS = 30000;
 
 export function usePhoneBelowMonitorDetection(

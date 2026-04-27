@@ -56,16 +56,21 @@ function CandidateVerifyContent() {
                             setSessionId(data._id);
                             setStep("biometric");
                         }
+                    } else {
+                        // Session not found or access denied — show an error
+                        if (isMounted) {
+                            const err = await res.json().catch(() => ({}));
+                            setJoinError(err?.message || "Session link is invalid or has expired.");
+                        }
                     }
-                } catch (e) {
-                    console.error("Failed to load session from URL", e);
+                } catch {
+                    if (isMounted) setJoinError("Could not connect to the server. Please try again.");
                 } finally {
                     if (isMounted) setJoining(false);
                 }
             } else if (urlCode) {
                 setSessionCode(urlCode);
-                // We'll let them click "Join" instead of auto-joining to avoid unexpected network flashes, 
-                // but the input will be prefilled.
+                // Pre-fill the code; candidate clicks Join to avoid unexpected auto-join flashes.
             }
         };
 
@@ -131,13 +136,23 @@ function CandidateVerifyContent() {
     const handleStartExam = useCallback(async () => {
         if (!sessionId) return;
 
-        await fetch(`/api/session/${sessionId}`, {
-            method: "PATCH",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ status: "in_progress" }),
-        });
+        try {
+            const res = await fetch(`/api/session/${sessionId}`, {
+                method: "PATCH",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ status: "in_progress" }),
+            });
 
-        router.push(`/candidate/exam/${sessionId}`);
+            if (!res.ok) {
+                const err = await res.json().catch(() => ({}));
+                setJoinError(err?.message || "Failed to start exam. Please try again.");
+                return;
+            }
+
+            router.push(`/candidate/exam/${sessionId}`);
+        } catch {
+            setJoinError("Could not connect to the server. Please check your connection and try again.");
+        }
     }, [sessionId, router]);
 
     if (!user) return null;
@@ -236,6 +251,12 @@ function CandidateVerifyContent() {
                         ⚠️ Once you start, the system will monitor your camera and
                         microphone. Do not switch tabs or look away for extended periods.
                     </div>
+
+                    {joinError && (
+                        <div className="p-3 rounded-lg bg-red-900/30 border border-red-800 text-red-300 text-sm text-center mb-4">
+                            {joinError}
+                        </div>
+                    )}
 
                     <button
                         onClick={handleStartExam}

@@ -15,8 +15,11 @@ const LEFT_EYE_OUTER = 33;
 const RIGHT_EYE_INNER = 362;
 const RIGHT_EYE_OUTER = 263;
 
-const OFFSET_THRESHOLD = 0.30;  // 30% off-center = looking away
-const SUSTAINED_MS = 3000;      // 3 seconds sustained
+// Raised from 0.30 → 0.42: reading text at the edges of a wide monitor
+// shifts pupils ~35-38% from center — 0.30 was generating false positives.
+const OFFSET_THRESHOLD = 0.42;
+// Raised from 3s → 6s: a 3-second glance during normal reading is not suspicious.
+const SUSTAINED_MS = 6000;
 const COOLDOWN_MS = 10000;      // 10 seconds between violations
 
 /**

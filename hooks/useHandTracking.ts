@@ -8,8 +8,13 @@ interface HandTrackingState {
 }
 
 const CHECK_INTERVAL_MS = 100; // ~10fps throttle for HandLandmarker
-const SUSTAINED_ANOMALY_MS = 5000; // 5 seconds sustained to flag
-const COOLDOWN_MS = 30000; // 30 seconds between violations
+// Raised from 5s → 8s: the "inLowerFrame + fingersCurled" heuristic also triggers
+// on normal typing posture (hands resting on keyboard below camera midpoint).
+// 8s sustained eliminates transient false positives from typing and chin-resting.
+const SUSTAINED_ANOMALY_MS = 8000;
+// Raised from 30s → 60s: hand-detection false positives cluster in time (lighting,
+// angle changes); 60s prevents a single posture shift from generating many reports.
+const COOLDOWN_MS = 60000;
 
 export function useHandTracking(
     sessionId: string,
@@ -46,7 +51,7 @@ export function useHandTracking(
                         candidateId,
                         type: "HAND_GESTURE_ANOMALY",
                         timestamp: new Date().toISOString(),
-                        confidence: 0.85,
+                        confidence: 0.75,
                         direction: "PHONE_HOLDING_DETECTED",
                     }),
                 });

@@ -10,10 +10,15 @@ interface FaceProximityState {
 }
 
 // Thresholds (normalized; FaceMesh landmarks are 0-1)
-const TOO_FAR_THRESHOLD = 0.06;    // Inter-eye distance < 6% of frame = face is far
-const TOO_CLOSE_THRESHOLD = 0.30;  // Inter-eye distance > 30% of frame = face too close
-const SUSTAINED_MS = 3000;         // Must sustain anomaly for 3 seconds
-const COOLDOWN_MS = 15000;         // 15 seconds between violations
+// TOO_FAR lowered from 0.06 → 0.04: leaning back to think puts inter-eye at ~0.05,
+// which was falsely flagging candidates as having "walked away".
+const TOO_FAR_THRESHOLD = 0.04;
+// TOO_CLOSE raised from 0.30 → 0.36: leaning forward to read small text on screen
+// pushes inter-eye to ~0.31-0.33; that's not camera blocking behaviour.
+const TOO_CLOSE_THRESHOLD = 0.36;
+// Raised from 3s → 8s: brief leans during reading should not trigger.
+const SUSTAINED_MS = 8000;
+const COOLDOWN_MS = 30000;         // Raised from 15s to reduce repeat flags during reading
 
 // FaceMesh landmark indices
 const LEFT_EYE_OUTER = 33;

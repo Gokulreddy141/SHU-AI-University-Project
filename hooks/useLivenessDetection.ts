@@ -3,11 +3,20 @@ import { useState, useRef, useCallback, useEffect } from "react";
 
 interface FaceLandmark { x: number; y: number; z: number; }
 
-const CHALLENGE_INTERVAL_MS = 120000; // Challenge every 2 minutes
-const BLINK_CHALLENGE_TIMEOUT_MS = 8000; // 8s to complete blink challenge
-const MICRO_MOVEMENT_WINDOW = 30;     // frames to track for micro-movement
-const MICRO_MOVEMENT_THRESHOLD = 0.0003; // Min variance = live person (not photo/video)
-const COOLDOWN_MS = 90000;
+// Raised from 2min → 4min: blink challenges mid-question are disruptive and
+// the passive micro-movement check already runs continuously.
+const CHALLENGE_INTERVAL_MS = 240000;
+// Raised from 8s → 15s: candidate may be mid-sentence in a coding answer
+// and genuinely miss the prompt for several seconds before noticing.
+const BLINK_CHALLENGE_TIMEOUT_MS = 15000;
+// Raised from 30 → 60 frames: 30 frames (~1s) was far too short — a candidate
+// reading intently holds perfectly still for 1-2s routinely.
+// 60 frames (~2s at 30fps) is a more realistic minimum for a static spoof.
+const MICRO_MOVEMENT_WINDOW = 60;
+// Lowered from 0.0003 → 0.00015: with a wider 60-frame window, genuine micro-
+// movements accumulate more variance, so the threshold can be tighter.
+const MICRO_MOVEMENT_THRESHOLD = 0.00015;
+const COOLDOWN_MS = 120000;          // Raised from 90s
 
 /**
  * Liveness Detection
