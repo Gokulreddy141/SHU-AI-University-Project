@@ -49,7 +49,10 @@ export function useSandboxEnvironmentCheck(
                         candidateId,
                         type: "VM_OR_SANDBOX_DETECTED",
                         timestamp: new Date().toISOString(),
-                        confidence: 0.90,
+                        // Lowered from 0.90 → 0.65: corporate laptops with restricted
+                        // GPU drivers, cloud desktops (AWS WorkSpaces, Citrix), and some
+                        // Chromebooks use SwiftShader/LLVMpipe legitimately.
+                        confidence: 0.65,
                         direction: info.substring(0, 100),
                     }),
                 });
@@ -70,8 +73,10 @@ export function useSandboxEnvironmentCheck(
                 const gl = canvas.getContext("webgl") || canvas.getContext("experimental-webgl") as WebGLRenderingContext | null;
 
                 if (!gl) {
-                    setState({ isSandboxSuspected: true, rendererInfo: "No WebGL" });
-                    logViolation("WebGL Disabled/Unsupported");
+                    // Don't flag missing WebGL as a violation — Firefox's "Resist Fingerprinting"
+                    // mode, privacy browsers (Brave), and some corporate SOE configurations
+                    // disable WebGL entirely. Too common to be a reliable VM signal.
+                    setState({ isSandboxSuspected: false, rendererInfo: "No WebGL" });
                     hasChecked.current = true;
                     return;
                 }
@@ -98,7 +103,7 @@ export function useSandboxEnvironmentCheck(
                 });
 
                 if (isVM) {
-                    logViolation(renderer);
+                    logViolation(renderer); // confidence lowered to 0.65 — some legit workstations use software renderers
                 }
 
                 hasChecked.current = true;

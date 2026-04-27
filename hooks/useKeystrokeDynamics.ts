@@ -19,14 +19,20 @@ interface KeystrokeDynamicsState {
 const MIN_KEYSTROKES_FOR_ANALYSIS = 30;      // Need at least 30 keystrokes to build a profile
 const HOLD_DURATION_VARIANCE_THRESHOLD = 0.1; // Suspiciously low variance = bot
 const BURST_THRESHOLD_MS = 15;                // Keys pressed < 15ms apart = paste/macro
-const BURST_COUNT_THRESHOLD = 5;              // 5+ burst events = suspicious
+// Raised from 5 → 10: typing a formula like `x = (a + b) * c` or a code block
+// produces 5-7 fast bursts naturally. 10 consecutive bursts is a clearer paste signal.
+const BURST_COUNT_THRESHOLD = 10;
 const COOLDOWN_MS = 30000;                    // 30 seconds between violation reports
 
 // Typing Identity (Mahalanobis distance)
-const IDENTITY_BASELINE_SAMPLES = 50;        // Build baseline over 50 keystrokes
+// Baseline raised from 50 → 80 samples: more data = more stable baseline,
+// reducing false positives from early-exam nervousness skewing the profile.
+const IDENTITY_BASELINE_SAMPLES = 80;
 const IDENTITY_CHECK_INTERVAL = 30;          // Check every 30 keystrokes after baseline
-const MAHALANOBIS_THRESHOLD = 3.5;           // z-score > 3.5 = likely different typist
-const IDENTITY_COOLDOWN_MS = 120000;         // 2 minutes between identity mismatch reports
+// Threshold raised from 3.5 → 5.0: typing rhythm naturally drifts under stress,
+// fatigue, or when switching from prose to code. 3.5 was too tight for a single session.
+const MAHALANOBIS_THRESHOLD = 5.0;
+const IDENTITY_COOLDOWN_MS = 180000;         // Raised from 2min → 3min between reports
 
 /**
  * Computes the Mahalanobis distance of a new sample against a baseline distribution.

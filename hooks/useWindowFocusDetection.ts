@@ -6,8 +6,9 @@ interface WindowFocusState {
     blurCount: number;
 }
 
-// Ignore accidental/transient blurs (e.g. dev tools popping open) shorter than this
-const MIN_BLUR_DURATION_MS = 3000;
+// Raised from 3s → 8s: OS notifications (battery, antivirus, calendar alerts)
+// steal focus for 3-5s routinely. Only flag deliberate tab switching.
+const MIN_BLUR_DURATION_MS = 8000;
 // Only report one violation per window per cooldown period
 const VIOLATION_COOLDOWN_MS = 45000;
 // Grace period after exam start — page may not be focused immediately on load

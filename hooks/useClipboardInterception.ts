@@ -1,8 +1,12 @@
 "use client";
 import { useEffect, useRef, useCallback } from "react";
 
-const COOLDOWN_MS = 10000;
-const LARGE_PASTE_THRESHOLD = 80; // chars — AI-generated answers tend to be long
+// Raised from 10s → 30s: a fast Ctrl+Z then re-paste within 10s could double-fire.
+const COOLDOWN_MS = 30000;
+// Raised from 80 → 150: 80 chars catches short code snippets and sentences the
+// candidate may legitimately paste (e.g. their own previously typed notes, a
+// formula from earlier in the exam). 150 chars still catches AI-generated paragraphs.
+const LARGE_PASTE_THRESHOLD = 150; // chars — AI-generated answers tend to be long
 
 /**
  * Detects suspicious paste behaviour:
@@ -82,7 +86,10 @@ export function useClipboardInterception(
             //   - size of pasted content (larger = more suspicious)
             //   - time since last genuine keystroke (longer gap = more suspicious)
             const timeSinceLastKeystroke = Date.now() - lastKeystrokeTime.current;
-            const noRecentTyping = lastKeystrokeTime.current === 0 || timeSinceLastKeystroke > 3000;
+            // Raised from 3s → 8s: a candidate can stop typing for 3s while reading the
+            // question or thinking before pasting their own notes — 8s is a more reliable
+            // signal that no typing preceded the paste at all.
+            const noRecentTyping = lastKeystrokeTime.current === 0 || timeSinceLastKeystroke > 8000;
             const isLarge = len >= LARGE_PASTE_THRESHOLD;
 
             let confidence = 0.6;

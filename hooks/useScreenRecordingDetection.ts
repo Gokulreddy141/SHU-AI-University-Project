@@ -8,9 +8,15 @@ interface ScreenRecordingState {
 }
 
 const FPS_CHECK_INTERVAL_MS = 5000;    // Check FPS every 5 seconds
-const FPS_DROP_THRESHOLD = 20;          // Below 20 FPS sustained = recording suspected
-const FPS_SAMPLES_NEEDED = 3;           // Need 3 consecutive low-FPS readings
-const COOLDOWN_MS = 60000;              // 60 seconds between violations
+// Lowered from 20 → 12 FPS: React's heavy animations, FaceMesh model loading,
+// and MediaPipe processing can all push the browser below 20fps on mid-range
+// hardware without any screen recording involved.
+const FPS_DROP_THRESHOLD = 12;
+// Raised from 3 → 5 consecutive low-FPS readings before flagging.
+// This means 25 seconds of sustained low FPS — enough to rule out a
+// temporary UI render spike or model initialisation.
+const FPS_SAMPLES_NEEDED = 5;
+const COOLDOWN_MS = 120000;             // Raised from 60s
 
 /**
  * Detects screen recording by combining two heuristics:
