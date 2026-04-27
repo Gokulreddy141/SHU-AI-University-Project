@@ -2,9 +2,15 @@
 import { useState, useRef, useCallback, useEffect } from "react";
 
 const SCORE_INTERVAL_MS = 60000;  // Score every minute
-const MIN_SAMPLES = 3;            // Need at least 3 scoring intervals before flagging
-const ANOMALY_THRESHOLD = 0.65;   // Isolation Forest score > 0.65 = anomaly
-const COOLDOWN_MS = 180000;       // 3 minutes between reports
+// Raised from 3 → 8 samples: the first 3 minutes of any exam show high
+// natural variance (nerves, settling in, reading instructions). Only start
+// flagging after 8 full minutes of stable behavioral data.
+const MIN_SAMPLES = 8;
+// Lowered from 0.65 → 0.50: the Isolation Forest score is noisy with small
+// history windows. 0.65 was triggering on natural mid-exam behavioral shifts
+// (harder question → slower typing, adrenaline → higher blink rate).
+const ANOMALY_THRESHOLD = 0.50;
+const COOLDOWN_MS = 300000;       // Raised from 3min → 5min between reports
 
 interface BehaviorSample {
     lookAwayRate: number;    // 0-1: fraction of time looking away
@@ -43,6 +49,9 @@ export function useBehavioralConsistency(
     const [consistencyScore, setConsistencyScore] = useState<number>(1.0); // 1.0 = fully consistent
 
     const samples = useRef<BehaviorSample[]>([]);
+    // Require 2 consecutive anomaly scores before firing — a single 60s window
+    // anomaly is normal (stress spike, hard question); sustained shift is not.
+    const consecutiveAnomalies = useRef<number>(0);
     const currentWindow = useRef<Partial<BehaviorSample> & {
         lookAwayFrames: number;
         totalFrames: number;
@@ -186,18 +195,23 @@ export function useBehavioralConsistency(
             setConsistencyScore(1 - score); // Invert: 1 = consistent, 0 = anomalous
 
             if (score > ANOMALY_THRESHOLD && samples.current.length >= MIN_SAMPLES) {
-                // Find most anomalous feature
-                const features: (keyof BehaviorSample)[] = [
-                    "lookAwayRate", "blinkRate", "keystrokeRate",
-                    "mouseActivity", "facePresence", "voiceActivity"
-                ];
-                const means = Object.fromEntries(
-                    features.map(f => [f, samples.current.reduce((s, samp) => s + samp[f], 0) / samples.current.length])
-                );
-                const anomalousFeature = features.reduce((worst, f) =>
-                    Math.abs(sample[f] - means[f]) > Math.abs(sample[worst] - means[worst]) ? f : worst
-                );
-                logViolation(score, `${anomalousFeature}:${sample[anomalousFeature].toFixed(2)}`);
+                consecutiveAnomalies.current++;
+                if (consecutiveAnomalies.current >= 2) {
+                    const features: (keyof BehaviorSample)[] = [
+                        "lookAwayRate", "blinkRate", "keystrokeRate",
+                        "mouseActivity", "facePresence", "voiceActivity"
+                    ];
+                    const means = Object.fromEntries(
+                        features.map(f => [f, samples.current.reduce((s, samp) => s + samp[f], 0) / samples.current.length])
+                    );
+                    const anomalousFeature = features.reduce((worst, f) =>
+                        Math.abs(sample[f] - means[f]) > Math.abs(sample[worst] - means[worst]) ? f : worst
+                    );
+                    logViolation(score, `${anomalousFeature}:${sample[anomalousFeature].toFixed(2)}`);
+                    consecutiveAnomalies.current = 0;
+                }
+            } else {
+                consecutiveAnomalies.current = 0;
             }
 
             // Save sample and reset window

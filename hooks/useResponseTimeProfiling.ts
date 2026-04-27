@@ -7,8 +7,11 @@ interface ResponseTimeState {
     questionsAnswered: number;
 }
 
-const INSTANT_THRESHOLD_MS = 5000;    // < 5 seconds = suspiciously fast
-const SLOW_THRESHOLD_MS = 180000;     // > 3 minutes = suspiciously slow
+// Raised from 5s → 12s: expert candidates answer simple MCQs in 2-4s legitimately.
+// 12s still catches pre-looked-up answers while allowing genuine fast recall.
+const INSTANT_THRESHOLD_MS = 12000;
+// Raised from 3min → 5min: hard coding problems genuinely take 4+ minutes.
+const SLOW_THRESHOLD_MS = 300000;
 const COOLDOWN_MS = 30000;            // 30 seconds between violations
 
 /**
@@ -47,7 +50,9 @@ export function useResponseTimeProfiling(
                         candidateId,
                         type: "RESPONSE_TIME_ANOMALY",
                         timestamp: new Date().toISOString(),
-                        confidence: reason === "INSTANT" ? 0.85 : 0.65,
+                        // INSTANT confidence lowered from 0.85 → 0.60: fast answers are often
+                // just expert recall, not pre-looked-up answers.
+                confidence: reason === "INSTANT" ? 0.60 : 0.65,
                         direction: `${reason} Q:${questionId} T:${Math.round(elapsed / 1000)}s`,
                     }),
                 });

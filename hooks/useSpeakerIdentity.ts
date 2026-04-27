@@ -2,12 +2,16 @@
 import { useEffect, useRef, useCallback } from "react";
 import type { SharedMic } from "./useSharedMic";
 
-const BASELINE_DURATION_MS = 15000; // 15s to build voice baseline
+// Raised from 15s → 25s: 15s provides only ~5 usable speech frames in a quiet
+// exam environment. 25s yields a far more stable voice fingerprint baseline.
+const BASELINE_DURATION_MS = 25000;
 const CHECK_INTERVAL_MS = 30000;    // Check every 30 seconds
 const MFCC_BINS = 13;               // 13 MFCCs — standard for speaker ID
-const SIMILARITY_THRESHOLD = 0.78;  // Cosine similarity < 0.78 = different speaker
+// Lowered from 0.78 → 0.72: candidate voice shifts 5-10% under exam stress
+// (pitch rise, throat tension). 0.78 was flagging genuine same-speaker drift.
+const SIMILARITY_THRESHOLD = 0.72;
 const MIN_ENERGY_DB = -45;          // Only analyze frames with speech (not silence)
-const COOLDOWN_MS = 60000;
+const COOLDOWN_MS = 90000;          // Raised from 60s — voice checks are noisy signals
 
 /**
  * Speaker Voice Identity Verification
@@ -34,6 +38,9 @@ export function useSpeakerIdentity(
     const lastCheckTime = useRef<number>(0);
     const lastViolationTime = useRef<number>(0);
     const buildStart = useRef<number>(0);
+    // Require 2 consecutive low-similarity checks before flagging.
+    // A single check drop (mic repositioned, throat clear) is not a proxy swap.
+    const lowSimilarityStreak = useRef<number>(0);
 
     const audioContextRef = useRef<AudioContext | null>(null);
     const analyserRef = useRef<AnalyserNode | null>(null);
@@ -187,7 +194,13 @@ export function useSpeakerIdentity(
                         lastCheckTime.current = now;
                         const sim = cosineSimilarity(baselineRef.current, features);
                         if (sim < SIMILARITY_THRESHOLD) {
-                            logViolation(sim);
+                            lowSimilarityStreak.current++;
+                            if (lowSimilarityStreak.current >= 2) {
+                                logViolation(sim);
+                                lowSimilarityStreak.current = 0;
+                            }
+                        } else {
+                            lowSimilarityStreak.current = 0;
                         }
                     }
                 }

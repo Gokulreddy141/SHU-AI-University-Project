@@ -7,8 +7,11 @@ interface LipSyncState {
 }
 
 const LIP_MOVEMENT_THRESHOLD = 0.008; // lip distance variation threshold
-const SUSPICIOUS_DURATION_MS = 3000;  // 3 seconds of mismatch
-const COOLDOWN_MS = 10000;            // 10 seconds between flags
+// Raised from 3s → 10s: candidates reading silently will have still lips
+// while ambient noise (HVAC, street) is above threshold. 3s was far too short
+// to distinguish background noise from someone dictating answers to them.
+const SUSPICIOUS_DURATION_MS = 10000;
+const COOLDOWN_MS = 30000;            // Raised from 10s to reduce noise in quiet rooms
 
 // FaceMesh landmark indices for lip detection
 const UPPER_LIP_CENTER = 13;
@@ -98,8 +101,9 @@ export function useLipSyncDetection(
             const variance = history.reduce((sum, val) => sum + Math.pow(val - avg, 2), 0) / history.length;
             const lipVariation = Math.sqrt(variance);
 
-            // Cross-reference: audio detected + no lip movement = suspicious
-            const hasAudio = currentAudioLevel.current > 0.02;
+            // Raised from 0.02 → 0.06 to match NOISE_THRESHOLD in useAmbientNoiseDetection.
+            // 0.02 caught every environmental hum; 0.06 means audible speech-level sound.
+            const hasAudio = currentAudioLevel.current > 0.06;
             const hasLipMovement = lipVariation > LIP_MOVEMENT_THRESHOLD;
             const isSuspicious = hasAudio && !hasLipMovement;
 
