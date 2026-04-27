@@ -8,9 +8,14 @@ interface AmbientNoiseState {
     isListening: boolean;     // Mic successfully initialized
 }
 
-const NOISE_THRESHOLD = 0.04;       // RMS above this = significant audio
-const SUSTAINED_NOISE_MS = 12000;   // 12 seconds before flagging (was 8s — reduce false positives)
-const COOLDOWN_MS = 60000;          // 60 seconds between flags (was 20s)
+// Raised from 0.04 → 0.07: HVAC, refrigerators, street traffic all sit at
+// 0.04-0.06 RMS. Only flag audio loud enough to indicate speech/dictation.
+const NOISE_THRESHOLD = 0.07;
+// Raised from 12s → 25s: background hum from AC runs continuously.
+// A 25s sustained threshold means the noise has to outlast any normal
+// environmental burst (truck passing, door closing, etc.).
+const SUSTAINED_NOISE_MS = 25000;
+const COOLDOWN_MS = 120000;         // Raised from 60s — noisy environments would spam violations
 const CHECK_INTERVAL_MS = 200;      // Sample audio every 200ms
 const STARTUP_GRACE_MS = 15000;     // 15s after mic init before any violation
 

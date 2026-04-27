@@ -31,7 +31,10 @@ interface VoiceActivityState {
 }
 
 const SPEECH_WINDOW_MS = 5000;   // Speech flag stays active for 5 seconds
-const COOLDOWN_MS = 15000;       // 15 seconds between violations
+// Raised from 15s → 45s: a single Web Speech API detection event is ~50% likely
+// to be ambient noise. Requiring 45s cooldown means genuine multi-detection
+// patterns get flagged but one-off noisy-room events do not repeat-fire.
+const COOLDOWN_MS = 45000;
 
 /**
  * Detects if recognizable words are being spoken near the candidate.
@@ -59,6 +62,9 @@ export function useVoiceActivityDetection(
     const speechTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
     const lastViolationTime = useRef<number>(0);
     const shouldRestart = useRef(true);
+    // Require 2 cross-reference hits before logging — one-off ambient noise
+    // routinely triggers a single false detection.
+    const crossRefHitCount = useRef<number>(0);
     // Refs mirror state so checkCrossReference can read live values even when
     // it is captured inside a stale FaceMesh closure (initAiDetection only runs once)
     const speechDetectedRef = useRef(false);
@@ -187,7 +193,14 @@ export function useVoiceActivityDetection(
             }
 
             if (isAnomalous) {
-                logViolation();
+                crossRefHitCount.current++;
+                // Only log after 2 consecutive hits — filters single ambient-noise events
+                if (crossRefHitCount.current >= 2) {
+                    logViolation();
+                    crossRefHitCount.current = 0;
+                }
+            } else {
+                crossRefHitCount.current = 0;
             }
         },
         [logViolation]

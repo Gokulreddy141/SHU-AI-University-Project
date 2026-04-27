@@ -2,10 +2,14 @@
 import { useEffect, useRef, useCallback, useState } from "react";
 import type { SharedMic } from "./useSharedMic";
 
-const COOLDOWN_MS = 15000;
-const SPEECH_PROB_THRESHOLD = 0.5;    // Probability above which we consider speech detected
+const COOLDOWN_MS = 30000;
+// Raised from 0.5 → 0.65: energy+ZCR+spectral score of 0.5 fires too easily
+// on HVAC / adjacent room voices. 0.65 requires stronger speech-band energy.
+const SPEECH_PROB_THRESHOLD = 0.65;
 const SILENCE_RESET_MS = 2000;        // 2s silence resets ongoing speech window
-const SUSTAINED_SPEECH_MS = 8000;     // 8s of sustained speech = anomaly (pre-recorded / dictation)
+// Raised from 8s → 15s: thinking aloud, reading back answers, or sub-vocalising
+// during a coding problem is normal. 15s sustained speech is genuine dictation.
+const SUSTAINED_SPEECH_MS = 15000;
 const STARTUP_GRACE_MS = 15000;       // 15s before any violation can fire
 
 /**

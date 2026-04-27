@@ -109,13 +109,20 @@ export function useAudioSpoofingDetection(
             let spoofReason = "";
 
             // Heuristic 1: Perfect Silence — virtual cable deadzone
-            if (numZeroes > CONSTANTS.HISTORY_SIZE * 0.8) {
+            // Removed the simple 80% silence check: legitimate exam behaviour
+            // (candidate reading, thinking) produces genuine silence and was
+            // constantly hitting this threshold in quiet rooms.
+            // Only flag if silence is truly absolute (100% zeros) for the full window,
+            // which only happens with a virtual cable or muted/disconnected mic.
+            if (numZeroes === CONSTANTS.HISTORY_SIZE) {
                 isSpoofed = true;
-                spoofReason = "Unnatural absolute silence (Virtual Cable Deadzone)";
+                spoofReason = "Complete absolute silence across entire window (Virtual Cable / disconnected mic)";
             }
 
             // Heuristic 2: Constant amplitude — TTS / looped audio
-            if (mean > 20 && stdDev < 1.0) {
+            // stdDev threshold raised from 1.0 → 3.0: browser AGC and codec compression
+            // naturally flatten real speech to stdDev 1.0-2.5 on many devices.
+            if (mean > 20 && stdDev < 3.0) {
                 isSpoofed = true;
                 spoofReason = `Unnatural constant amplitude pattern (stdDev: ${stdDev.toFixed(2)})`;
             }
