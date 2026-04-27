@@ -48,6 +48,10 @@ export function useSileroVAD(
     const calibrationSamples = useRef<number[]>([]);
     const isCalibrated = useRef<boolean>(false);
 
+    // Rolling confidence buffer: smooth over last 8 frames to suppress transient noise spikes
+    const CONFIDENCE_WINDOW = 8;
+    const confidenceHistory = useRef<number[]>([]);
+
     const logViolation = useCallback(
         async (duration: number, prob: number) => {
             const now = Date.now();
@@ -176,7 +180,14 @@ export function useSileroVAD(
                 const zcrScore = zcr < 0.15 ? 1 : zcr < 0.25 ? 0.5 : 0;
                 const bandScore = Math.min(1, speechRatio * 2);
 
-                const prob = energyScore * 0.5 + zcrScore * 0.3 + bandScore * 0.2;
+                const rawProb = energyScore * 0.5 + zcrScore * 0.3 + bandScore * 0.2;
+
+                // Smooth over rolling window to suppress transient noise spikes
+                confidenceHistory.current.push(rawProb);
+                if (confidenceHistory.current.length > CONFIDENCE_WINDOW) {
+                    confidenceHistory.current.shift();
+                }
+                const prob = confidenceHistory.current.reduce((s: number, v: number) => s + v, 0) / confidenceHistory.current.length;
 
                 setSpeechProbability(prob);
                 const isSpeech = prob > SPEECH_PROB_THRESHOLD;
