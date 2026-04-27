@@ -13,9 +13,13 @@ interface HeadPoseState {
 }
 
 // Thresholds for anomaly detection (normalized -1 to 1 scale)
-const YAW_THRESHOLD = 0.35;    // Looking too far left/right
-const PITCH_THRESHOLD = 0.30;  // Looking too far up/down
-const SUSTAINED_MS = 4000;     // Must sustain anomaly for 4 seconds
+// Raised from 0.35 → 0.42: slight natural head tilt while thinking or
+// reading across a widescreen was crossing 0.35 and causing false positives.
+const YAW_THRESHOLD = 0.42;
+// Raised from 0.30 → 0.38: looking at top/bottom of screen causes ~0.32-0.35 pitch.
+const PITCH_THRESHOLD = 0.38;
+// Raised from 4s → 6s: brief head movements during reading should not flag.
+const SUSTAINED_MS = 6000;
 const COOLDOWN_MS = 12000;     // 12 seconds between violations
 
 // MediaPipe Face Mesh landmark indices for head pose estimation

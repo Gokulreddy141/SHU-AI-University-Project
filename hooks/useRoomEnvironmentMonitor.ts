@@ -4,7 +4,10 @@ import { useEffect, useRef, useCallback } from "react";
 const BASELINE_DELAY_MS = 8000;    // Wait 8s before capturing baseline (camera warmup)
 const CHECK_INTERVAL_MS = 45000;   // Check every 45 seconds
 const PHASH_SIZE = 8;              // 8×8 perceptual hash = 64 bits
-const HASH_DISTANCE_THRESHOLD = 18; // Hamming distance > 18/64 bits = significant change
+// Raised from 18 → 24: natural lighting drift over a 60-90 min exam (sun moving,
+// room lights adjusting) changes pHash by 18-22 bits. Only flag truly dramatic
+// changes (person entering room, candidate moving location).
+const HASH_DISTANCE_THRESHOLD = 24;
 const COOLDOWN_MS = 120000;        // 2 minutes between violation reports
 
 /**
@@ -26,7 +29,7 @@ const COOLDOWN_MS = 120000;        // 2 minutes between violation reports
  * candidate's face/body region to reduce false positives from movement.
  */
 export function useRoomEnvironmentMonitor(
-    videoRef: React.MutableRefObject<HTMLVideoElement | null>,
+    videoRef: React.RefObject<HTMLVideoElement | null>,
     sessionId: string,
     candidateId: string,
     enabled: boolean

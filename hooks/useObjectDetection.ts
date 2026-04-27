@@ -11,18 +11,22 @@ interface ObjectDetectionState {
     detectedObjects: DetectedObject[];
 }
 
-// Objects that trigger violations in a proctored exam
+// Objects that trigger violations in a proctored exam.
+// "laptop" and "book" removed: candidates legitimately use an external monitor/keyboard
+// (COCO-SSD classifies keyboards as "laptop") and have books on their desk.
+// "remote" removed: TV remotes are common on desks and have near-zero cheat signal.
 const SUSPICIOUS_OBJECTS: Record<string, string> = {
     "cell phone": "PHONE_DETECTED",
-    "book": "UNAUTHORIZED_MATERIAL",
-    "laptop": "UNAUTHORIZED_MATERIAL",
-    "remote": "PHONE_DETECTED",
     "tablet": "UNAUTHORIZED_MATERIAL",
 };
 
-const CONFIDENCE_THRESHOLD = 0.6;
+// Raised from 0.60 → 0.75: COCO-SSD lite_mobilenet_v2 is inaccurate at 0.60 and
+// frequently misclassifies hands, laptops, and books as phones/tablets.
+const CONFIDENCE_THRESHOLD = 0.75;
 const DETECTION_INTERVAL_MS = 2000; // Run detection every 2 seconds to save CPU
-const COOLDOWN_MS = 15000; // 15 seconds between same-type violations
+// Raised from 15s → 45s: back-to-back frames at 0.5s intervals can fire multiple
+// times from a single physical object; 45s collapses these into one report.
+const COOLDOWN_MS = 45000;
 
 export function useObjectDetection(
     videoRef: React.RefObject<HTMLVideoElement | null>,
@@ -38,6 +42,10 @@ export function useObjectDetection(
     const modelRef = useRef<{ detect: (video: HTMLVideoElement) => Promise<Array<{ class: string; score: number }>> } | null>(null);
     const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
     const lastViolationTime = useRef<Record<string, number>>({});
+    // Require 2 consecutive detection windows before flagging.
+    // A single-frame detection is often a misclassification (hand partially in frame,
+    // motion blur, lighting change). Two consecutive windows (~4s apart) is far more reliable.
+    const detectionStreak = useRef<Record<string, number>>({});
 
     const logViolation = useCallback(
         async (type: string, objectClass: string, confidence: number) => {
@@ -116,11 +124,25 @@ export function useObjectDetection(
 
                 const suspicious: DetectedObject[] = [];
 
+                const detectedClasses = new Set<string>();
                 for (const pred of predictions) {
                     const violationType = SUSPICIOUS_OBJECTS[pred.class];
                     if (violationType && pred.score >= CONFIDENCE_THRESHOLD) {
                         suspicious.push({ class: pred.class, score: pred.score });
-                        logViolation(violationType, pred.class, pred.score);
+                        detectedClasses.add(pred.class);
+
+                        // Increment streak; only fire violation on second consecutive detection
+                        detectionStreak.current[pred.class] = (detectionStreak.current[pred.class] || 0) + 1;
+                        if (detectionStreak.current[pred.class] >= 2) {
+                            logViolation(violationType, pred.class, pred.score);
+                        }
+                    }
+                }
+
+                // Reset streak for objects not seen this frame
+                for (const cls of Object.keys(detectionStreak.current)) {
+                    if (!detectedClasses.has(cls)) {
+                        detectionStreak.current[cls] = 0;
                     }
                 }
 

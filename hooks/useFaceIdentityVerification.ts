@@ -22,10 +22,16 @@ const GEOMETRY_INDICES = {
     rightEyeCenter: 386,
 };
 
-const BASELINE_SAMPLES = 5;      // Collect 5 frames to build baseline
-const CHECK_INTERVAL_MS = 60000; // Re-check every 60 seconds
-const SIMILARITY_THRESHOLD = 0.85; // Geometric similarity < 85% = mismatch
-const COOLDOWN_MS = 120000;      // 2-minute cooldown between reports
+// Raised from 5 → 10 frames: 5 frames captured in the first ~0.5s may all share
+// the same lighting/angle. 10 frames spread across ~1s gives a more stable baseline.
+const BASELINE_SAMPLES = 10;
+// Raised from 60s → 90s: lighting shifts and natural expression changes over 60s
+// were breaching the threshold. 90s allows more settling between comparisons.
+const CHECK_INTERVAL_MS = 90000;
+// Lowered from 0.85 → 0.80: expressions (smile, squint), glasses removal, and
+// lighting changes can shift geometric ratios by 5-8%. 0.85 was too tight.
+const SIMILARITY_THRESHOLD = 0.80;
+const COOLDOWN_MS = 180000;      // Raised from 2min → 3min
 
 /**
  * Continuous Face Identity Verification
@@ -54,6 +60,9 @@ export function useFaceIdentityVerification(
     const baselineSamples = useRef<number[][]>([]);
     const lastCheckTime = useRef<number>(0);
     const lastViolationTime = useRef<number>(0);
+    // Require 2 consecutive low-similarity checks before flagging.
+    // One outlier (shadow, expression) is common; two in a row is suspicious.
+    const lowSimStreak = useRef<number>(0);
 
     const extractDescriptor = useCallback((landmarks: FaceLandmark[]): number[] | null => {
         if (landmarks.length < 468) return null;
@@ -152,7 +161,13 @@ export function useFaceIdentityVerification(
 
             const similarity = cosineSimilarity(baseline.current, descriptor);
             if (similarity < SIMILARITY_THRESHOLD) {
-                logViolation(similarity);
+                lowSimStreak.current++;
+                if (lowSimStreak.current >= 2) {
+                    logViolation(similarity);
+                    lowSimStreak.current = 0;
+                }
+            } else {
+                lowSimStreak.current = 0;
             }
         },
         [enabled, extractDescriptor, cosineSimilarity, logViolation]

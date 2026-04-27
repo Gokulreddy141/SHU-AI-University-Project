@@ -114,6 +114,8 @@ export default function CandidateExamPage() {
     const lookAwayStart = useRef<number | null>(null);
     const lastBlinkTime = useRef<number>(Date.now());
     const livenessFired = useRef<boolean>(false);
+    // Ref-based guard so simultaneous timer + button clicks never double-submit
+    const examEndingRef = useRef<boolean>(false);
     const faceMeshRef = useRef<{ close: () => void; send: (input: { image: HTMLVideoElement }) => Promise<void> } | null>(null);
     const cameraRef = useRef<{ stop: () => void } | null>(null);
     const aiRunning = useRef<boolean>(false);
@@ -725,7 +727,9 @@ export default function CandidateExamPage() {
                         lastBlinkTime.current = Date.now();
                         livenessFired.current = false;
                     } else {
-                        if (Date.now() - lastBlinkTime.current > 45000) {
+                        // Raised from 45s → 75s: focused reading naturally suppresses blinking
+                        // to 1 per 30-60s — 45s was triggering false liveness failures.
+                        if (Date.now() - lastBlinkTime.current > 75000) {
                             if (!livenessFired.current) {
                                 livenessFired.current = true;
                                 logViolation("LIVENESS_FAILURE");
@@ -745,14 +749,18 @@ export default function CandidateExamPage() {
                     const horizontalOffset = noseTip.x - cheekMid;
                     const verticalOffset = noseTip.y - forehead.y;
                     const faceWidth = Math.abs(rightCheek.x - leftCheek.x);
-                    const hThreshold = faceWidth * 0.15;
+                    // hThreshold raised from 0.15 → 0.22: slight head turns while reading
+                    // wide screens were triggering LEFT/RIGHT at 0.15 (too sensitive).
+                    // vThreshold multipliers relaxed: UP 0.6→0.45, DOWN 1.4→1.55
+                    // to avoid flagging downward reading of long questions.
+                    const hThreshold = faceWidth * 0.22;
                     const vThreshold = faceWidth * 0.25;
 
                     let dir = "CENTER";
                     if (horizontalOffset < -hThreshold) dir = "RIGHT";
                     else if (horizontalOffset > hThreshold) dir = "LEFT";
-                    else if (verticalOffset < vThreshold * 0.6) dir = "UP";
-                    else if (verticalOffset > vThreshold * 1.4) dir = "DOWN";
+                    else if (verticalOffset < vThreshold * 0.45) dir = "UP";
+                    else if (verticalOffset > vThreshold * 1.55) dir = "DOWN";
 
                     setGazeDirection(dir);
 
@@ -838,7 +846,8 @@ export default function CandidateExamPage() {
 
     // ── End exam ──
     const handleEndExam = useCallback(async () => {
-        if (examEnded) return;
+        if (examEnded || examEndingRef.current) return;
+        examEndingRef.current = true;
         setExamEnded(true);
         stopAutoFlush();
         await flush(); // CRITICAL: Ensure last batch of violations is saved *before* completing the session
@@ -1022,6 +1031,26 @@ export default function CandidateExamPage() {
                     {quiz.loading ? (
                         <div className="flex-1 rounded-2xl bg-[#1a1a1a] border border-[#3b3b3b] animate-pulse flex items-center justify-center">
                             <div className="w-8 h-8 border-2 border-primary border-t-transparent flex rounded-full animate-spin"></div>
+                        </div>
+                    ) : quiz.error ? (
+                        <div className="flex-1 rounded-2xl bg-[#1a1a1a] border border-red-900/50 flex flex-col items-center justify-center text-[#a1a1a1] gap-4 p-8 text-center">
+                            <div className="text-red-400 text-4xl">⚠</div>
+                            <p className="text-red-300 font-semibold">Failed to load exam questions</p>
+                            <p className="text-[#666] text-sm">{quiz.error}</p>
+                            <div className="flex gap-3">
+                                <button
+                                    onClick={() => window.location.reload()}
+                                    className="px-5 py-2 bg-primary hover:bg-primary-light text-black rounded-lg transition-colors font-semibold text-sm"
+                                >
+                                    Retry
+                                </button>
+                                <button
+                                    onClick={handleEndExam}
+                                    className="px-5 py-2 bg-white/10 hover:bg-white/15 text-white rounded-lg transition-colors text-sm"
+                                >
+                                    Exit Exam
+                                </button>
+                            </div>
                         </div>
                     ) : quiz.questions.length === 0 ? (
                         <div className="flex-1 rounded-2xl bg-[#1a1a1a] border border-[#3b3b3b] flex flex-col items-center justify-center text-[#a1a1a1] gap-4">
