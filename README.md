@@ -1,4 +1,4 @@
-# 🤖 AI-Powered Interview Integrity Platform
+# AI-Powered Interview Integrity Platform
 
 **MS Artificial Intelligence Final Year Project**
 
@@ -6,7 +6,7 @@ An advanced online examination and interview proctoring system powered by 29+ AI
 
 ---
 
-## 🎯 Project Overview
+## Project Overview
 
 This platform demonstrates cutting-edge AI capabilities for maintaining academic integrity in remote examinations and interviews. It combines multiple AI technologies to detect cheating attempts, verify candidate identity, and provide real-time monitoring.
 
@@ -22,7 +22,7 @@ This platform demonstrates cutting-edge AI capabilities for maintaining academic
 
 ---
 
-## 🚀 Quick Start
+## Quick Start
 
 ### Prerequisites
 
@@ -55,7 +55,7 @@ node scripts/verify-ai-features.js
 
 ---
 
-## 🤖 AI Technologies Used
+##  AI Technologies Used
 
 | Technology | Purpose | Implementation |
 |------------|---------|----------------|
@@ -110,7 +110,7 @@ node scripts/verify-ai-features.js
 
 ---
 
-## 🎓 Testing & Demonstration
+##  Testing & Demonstration
 
 ### For Project Presentation
 
@@ -152,7 +152,7 @@ http://localhost:3000/dashboard/ai-diagnostics
 
 ---
 
-## 📁 Project Structure
+## Project Structure
 
 ```
 ├── app/
@@ -181,7 +181,7 @@ http://localhost:3000/dashboard/ai-diagnostics
 
 ---
 
-## 🎯 Integrity Score Algorithm
+##  Integrity Score Algorithm
 
 The system calculates a real-time integrity score (0-100) based on weighted violations:
 
@@ -193,7 +193,7 @@ See `lib/integrity.ts` for complete algorithm.
 
 ---
 
-## 🔒 Privacy & Ethics
+##  Privacy & Ethics
 
 - ✅ Voice transcripts are NEVER stored (only detection flags)
 - ✅ Face embeddings used only for verification
@@ -203,7 +203,7 @@ See `lib/integrity.ts` for complete algorithm.
 
 ---
 
-## 🐛 Known Limitations
+##  Known Limitations
 
 1. **Browser Compatibility**
    - Web Speech API: Chrome/Edge only
@@ -220,7 +220,7 @@ See `lib/integrity.ts` for complete algorithm.
 
 ---
 
-## 📊 Performance Metrics
+##  Performance Metrics
 
 - **Face Detection**: 30 FPS (MediaPipe)
 - **Hand Tracking**: 10 FPS (throttled for performance)
@@ -230,7 +230,7 @@ See `lib/integrity.ts` for complete algorithm.
 
 ---
 
-## 🚀 Future Enhancements
+##  Future Enhancements
 
 - [ ] Face recognition matching (face-api.js)
 - [ ] Emotion detection (happiness, stress, confusion)
@@ -241,7 +241,7 @@ See `lib/integrity.ts` for complete algorithm.
 
 ---
 
-## 📚 Documentation
+##  Documentation
 
 - **Complete Testing Guide**: `AI_CAPABILITIES_TEST_CHECKLIST.md`
 - **API Documentation**: See `/app/api/` route files
@@ -249,7 +249,7 @@ See `lib/integrity.ts` for complete algorithm.
 
 ---
 
-## 🎓 Academic Context
+## Academic Context
 
 **Course**: MS Artificial Intelligence  
 **Purpose**: Final Year Project  
@@ -258,13 +258,13 @@ See `lib/integrity.ts` for complete algorithm.
 
 ---
 
-## 📝 License
+##  License
 
 This project is for academic purposes only.
 
 ---
 
-## 🤝 Support
+##  Support
 
 For questions or issues:
 1. Check `AI_CAPABILITIES_TEST_CHECKLIST.md`
