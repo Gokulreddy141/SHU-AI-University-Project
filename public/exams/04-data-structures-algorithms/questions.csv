@@ -1,0 +1,22 @@
+Type,Text,Points,Options,CorrectIndex,Languages,StarterCode,ExpectedOutput
+MCQ,What is the time complexity of binary search?,2,O(n);O(n log n);O(log n);O(1),2,,,
+MCQ,Which data structure operates on a Last In First Out (LIFO) principle?,2,Queue;Linked List;Stack;Heap,2,,,
+MCQ,What is the worst-case time complexity of quicksort?,3,O(n log n);O(n);O(n²);O(log n),2,,,
+MCQ,In a min-heap what is always true about the root node?,2,It is the largest element;It is the smallest element;It is the median element;It has no children,1,,,
+MCQ,Which traversal visits nodes in the order: left subtree → root → right subtree?,2,Pre-order;Post-order;In-order;Level-order,2,,,
+MCQ,What is the space complexity of merge sort?,3,O(1);O(log n);O(n);O(n²),2,,,
+MCQ,What does a hash map provide on average for lookup operations?,2,O(n);O(log n);O(1);O(n log n),2,,,
+MCQ,Which algorithm is best suited for finding the shortest path in an unweighted graph?,3,Dijkstra;DFS;BFS;Bellman-Ford,2,,,
+MCQ,What is a dynamic programming approach primarily based on?,3,Divide and conquer without memoization;Recursion only;Breaking problems into overlapping subproblems and caching results;Greedy local choices,2,,,
+MCQ,What is the time complexity of inserting into a balanced BST?,2,O(1);O(log n);O(n);O(n log n),1,,,
+MCQ,Which data structure would you use to implement a browser back/forward history?,3,Array;Linked List;Two Stacks;Queue,2,,,
+MCQ,What is tail recursion?,3,Recursion with no base case;A recursive call that is the last operation in a function allowing stack optimization;Recursion that uses loops;Mutual recursion between two functions,1,,,
+CODING,Write a function called binarySearch that takes a sorted array and a target number and returns the index of the target or -1 if not found.,8,,,javascript;typescript,"function binarySearch(arr, target) {
+  // write your solution here
+}",3
+CODING,Write a function called fibonacci that returns the nth Fibonacci number using dynamic programming (no naive recursion). fibonacci(0)=0 fibonacci(1)=1.,8,,,javascript;typescript,"function fibonacci(n) {
+  // write your solution here
+}",8
+CODING,Write a function called isBalanced that checks if a string of brackets ()[]{}  is balanced. Returns true if balanced false otherwise.,8,,,javascript;typescript,"function isBalanced(str) {
+  // write your solution here
+}",true
